@@ -1,0 +1,49 @@
+{
+  "source_archive": "The-OldOS-Project-2.0_8.zip",
+  "source_file": "OldOS/OldOS/Safari.swift",
+  "source_assets": [
+    "OldOS/OldOS/Assets.xcassets/Safari Icons",
+    "OldOS/OldOS/Assets.xcassets/Homescreen Icons/Safari.imageset"
+  ],
+  "standalone_target": "OldSafari",
+  "bundle_identifier": "com.oldsafari.standalone",
+  "deployment_target": "iOS 16.0+",
+  "third_party_dependencies": [],
+  "private_apis": false,
+  "rebuild_notes": {
+    "status": "Rebuilt as a multi-file SwiftUI app while preserving the OldOS visual language.",
+    "architecture": [
+      "Models/SafariTab.swift (Combine/KVO-reactive WKWebView wrapper)",
+      "Models/SafariBookmark.swift",
+      "Models/SafariHistoryEntry.swift",
+      "Store/SafariTabStore.swift (tabs, private mode, bookmarks, history)",
+      "Views/SafariRootView.swift",
+      "Views/SafariWebView.swift",
+      "Views/SafariAddressBar.swift",
+      "Views/SafariProgressBar.swift",
+      "Views/SafariToolbar.swift",
+      "Views/SafariTabsView.swift",
+      "Views/SafariLibraryView.swift",
+      "Views/SafariStartPageView.swift",
+      "Views/ShareSheet.swift",
+      "Support/OldSafariPalette.swift",
+      "Support/Notifications.swift"
+    ],
+    "features_added_beyond_original_extraction": [
+      "Private Browsing (separate tab pool + non-persistent WKWebsiteDataStore)",
+      "Reactive tab state via Combine/KVO instead of NotificationCenter polling",
+      "Loading progress bar + HTTPS lock indicator",
+      "Request Desktop Website (custom user agent toggle)",
+      "Find on Page (iOS 16 WKWebView find interaction)",
+      "Unified Library sheet (Bookmarks + History, grouped by day, swipe delete)",
+      "Favorites start page for blank tabs",
+      "System URL scheme hand-off (tel:, mailto:, maps:, etc.)",
+      "Full-bleed chrome behind the status bar / Dynamic Island",
+      "Haptic feedback on toolbar interactions"
+    ],
+    "fixes": [
+      "Original single-file prototype referenced a non-existent 'NavTab1' asset image for the 1-tab state; corrected to fall back to the base 'NavTab' asset.",
+      "Xcode scheme's BlueprintIdentifier did not match the PBXNativeTarget UUID in project.pbxproj, which would have broken `xcodebuild -scheme OldSafari` in CI; corrected to reference the real target."
+    ]
+  }
+}
