@@ -1,1 +1,255 @@
+name: Build OldSafari IPA
 
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oldsafari-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      SCHEME: OldSafari
+      CONFIGURATION: Release
+      BUILD_DIR: ${{ github.workspace }}/build
+      IPA: ${{ github.workspace }}/OldSafari-Unsigned.ipa
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d "$DEVELOPER_DIR"
+
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Locate Xcode project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECTS=()
+
+          while IFS= read -r project; do
+            PROJECTS+=("$project")
+          done < <(
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 8 \
+              -type d \
+              -name "*.xcodeproj" \
+              -print \
+              | sort
+          )
+
+          if [ "${#PROJECTS[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one Xcode project"
+            printf '%s\n' "${PROJECTS[@]}"
+            exit 1
+          fi
+
+          PROJECT="${PROJECTS[0]}"
+
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+
+          echo "Using:"
+          echo "$PROJECT"
+
+      - name: Verify scheme
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          xcodebuild \
+            -project "$PROJECT" \
+            -list
+
+      - name: Build OldSafari
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR/logs"
+
+          LOG="$BUILD_DIR/logs/xcodebuild.log"
+
+          xcodebuild \
+            clean build \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$BUILD_DIR" \
+            PRODUCT_NAME=OldSafari \
+            EXECUTABLE_NAME=OldSafari \
+            PRODUCT_BUNDLE_IDENTIFIER=com.oldsafari.standalone \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            2>&1 | tee "$LOG"
+
+          STATUS=${PIPESTATUS[0]}
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo ""
+            echo "========== BUILD ERRORS =========="
+
+            grep -nEi \
+              'error:|fatal error:|BUILD FAILED|SwiftCompile|CodeSign|Signing|Provisioning' \
+              "$LOG" \
+              | head -n 200 || true
+
+            echo ""
+            tail -n 150 "$LOG" || true
+
+            exit "$STATUS"
+          fi
+
+      - name: Verify OldSafari bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP="$BUILD_DIR/Build/Products/${CONFIGURATION}-iphoneos/OldSafari.app"
+          INFO="$APP/Info.plist"
+          BINARY="$APP/OldSafari"
+
+          echo "Checking:"
+          echo "$APP"
+
+          test -d "$APP" || {
+            echo "::error::OldSafari.app not found"
+            find "$BUILD_DIR/Build/Products" \
+              -maxdepth 4 \
+              -type d \
+              -name "*.app" \
+              -print || true
+            exit 1
+          }
+
+          test -f "$INFO" || {
+            echo "::error::Info.plist missing"
+            exit 1
+          }
+
+          test -f "$BINARY" || {
+            echo "::error::OldSafari executable missing"
+            echo ""
+            echo "App contents:"
+            find "$APP" -maxdepth 2 -print
+            exit 1
+          }
+
+          echo ""
+          echo "CFBundleDisplayName:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleDisplayName" \
+            "$INFO"
+
+          echo ""
+          echo "CFBundleName:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleName" \
+            "$INFO"
+
+          echo ""
+          echo "CFBundleExecutable:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" \
+            "$INFO"
+
+          echo ""
+          echo "CFBundleIdentifier:"
+          /usr/libexec/PlistBuddy \
+            -c "Print :CFBundleIdentifier" \
+            "$INFO"
+
+          echo ""
+          echo "Executable:"
+          file "$BINARY"
+
+          echo ""
+          echo "Architectures:"
+          lipo -info "$BINARY"
+
+      - name: Create IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP="$BUILD_DIR/Build/Products/${CONFIGURATION}-iphoneos/OldSafari.app"
+          PAYLOAD="$GITHUB_WORKSPACE/Payload"
+
+          rm -rf "$PAYLOAD"
+          rm -f "$IPA"
+
+          mkdir -p "$PAYLOAD"
+
+          cp -R \
+            "$APP" \
+            "$PAYLOAD/OldSafari.app"
+
+          cd "$GITHUB_WORKSPACE"
+
+          ditto \
+            -c -k \
+            --sequesterRsrc \
+            --keepParent \
+            "$PAYLOAD" \
+            "$IPA"
+
+          test -f "$IPA"
+
+          echo ""
+          echo "IPA:"
+          ls -lh "$IPA"
+
+          echo ""
+          echo "IPA structure:"
+          unzip -l "$IPA"
+
+          echo ""
+          echo "Verifying expected paths..."
+
+          unzip -l "$IPA" | grep -F "Payload/OldSafari.app/OldSafari" >/dev/null
+          unzip -l "$IPA" | grep -F "Payload/OldSafari.app/Info.plist" >/dev/null
+
+          echo "IPA structure OK."
+
+      - name: Upload IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OldSafari-Unsigned-IPA
+          path: ${{ env.IPA }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OldSafari-Build-Log
+          path: ${{ env.BUILD_DIR }}/logs/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 7
