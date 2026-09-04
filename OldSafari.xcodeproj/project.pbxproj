@@ -1,0 +1,479 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		9A0000010000000000000001 /* OldSafariApp.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 9A0000020000000000000002 /* OldSafariApp.swift */;
+		};
+		9A0000030000000000000003 /* Assets.xcassets in Resources */ = {
+			isa = PBXBuildFile;
+			fileRef = 9A0000040000000000000004 /* Assets.xcassets */;
+		};
+		DCF2342063BB46488889EC8E /* SafariBookmark.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 0BDF6CA347E8414DA2D8C1CB /* SafariBookmark.swift */;
+		};
+		FD68B8E2D8254E17A2D9007C /* SafariHistoryEntry.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 5CA5A03E030F4FEBBFE7BFEB /* SafariHistoryEntry.swift */;
+		};
+		C31A147D0E404F64998AE7C0 /* SafariTab.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = B5988DF923E8406B85DD5CBF /* SafariTab.swift */;
+		};
+		D6EB1A2CE5914FD48D39D48E /* SafariTabStore.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = E343E133CDB34AACB366768D /* SafariTabStore.swift */;
+		};
+		81A93F8785624F1AB088B57A /* Notifications.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 9606990ECBF84402B9E96180 /* Notifications.swift */;
+		};
+		202495A08BC940B3873F5C1E /* OldSafariPalette.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 709807C2D70E44E4B17BC5B0 /* OldSafariPalette.swift */;
+		};
+		9360922CDCA14B3381C4D884 /* SafariAddressBar.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = B3B235E326994DADABC64478 /* SafariAddressBar.swift */;
+		};
+		66FAF2FE785641689E9E0EB7 /* SafariLibraryView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = E59F08303AD8470888B9AF36 /* SafariLibraryView.swift */;
+		};
+		F80428D8867A4974ACC49170 /* SafariProgressBar.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = C98AEE52FB4A43E78EBF4E10 /* SafariProgressBar.swift */;
+		};
+		E44F2E8814AE4D96B4B7AAA0 /* SafariRootView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = CB199EC545CF473282180DA2 /* SafariRootView.swift */;
+		};
+		12406AA8C471482A94FD6A3F /* SafariStartPageView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 1D988085428F456493430DC4 /* SafariStartPageView.swift */;
+		};
+		E99B67A33DE648E7A7EB93CD /* SafariTabsView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 8E8941A4DDCA4CAE81338527 /* SafariTabsView.swift */;
+		};
+		901B47BBB0C545D290333A09 /* SafariToolbar.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 153D79A591484113875E6AB6 /* SafariToolbar.swift */;
+		};
+		6516E1930C614E969795E7BE /* SafariWebView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 8D4B21A2F2AB4E2E9AA2B68B /* SafariWebView.swift */;
+		};
+		54FD8A77A3E647768CBD4B93 /* ShareSheet.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 997C16FA280E4D31B3076B59 /* ShareSheet.swift */;
+		};
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		9A0000020000000000000002 /* OldSafariApp.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = OldSafariApp.swift;
+			sourceTree = "<group>";
+		};
+
+		9A0000040000000000000004 /* Assets.xcassets */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = folder.assetcatalog;
+			path = Assets.xcassets;
+			sourceTree = "<group>";
+		};
+
+		9A0000050000000000000005 /* Info.plist */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.xml;
+			path = Info.plist;
+			sourceTree = "<group>";
+		};
+
+		9A0000060000000000000006 /* OldSafari.app */ = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.application;
+			includeInIndex = 0;
+			path = OldSafari.app;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		0BDF6CA347E8414DA2D8C1CB /* SafariBookmark.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariBookmark.swift;
+			sourceTree = "<group>";
+		};
+
+		5CA5A03E030F4FEBBFE7BFEB /* SafariHistoryEntry.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariHistoryEntry.swift;
+			sourceTree = "<group>";
+		};
+
+		B5988DF923E8406B85DD5CBF /* SafariTab.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariTab.swift;
+			sourceTree = "<group>";
+		};
+
+		E343E133CDB34AACB366768D /* SafariTabStore.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariTabStore.swift;
+			sourceTree = "<group>";
+		};
+
+		9606990ECBF84402B9E96180 /* Notifications.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = Notifications.swift;
+			sourceTree = "<group>";
+		};
+
+		709807C2D70E44E4B17BC5B0 /* OldSafariPalette.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = OldSafariPalette.swift;
+			sourceTree = "<group>";
+		};
+
+		B3B235E326994DADABC64478 /* SafariAddressBar.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariAddressBar.swift;
+			sourceTree = "<group>";
+		};
+
+		E59F08303AD8470888B9AF36 /* SafariLibraryView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariLibraryView.swift;
+			sourceTree = "<group>";
+		};
+
+		C98AEE52FB4A43E78EBF4E10 /* SafariProgressBar.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariProgressBar.swift;
+			sourceTree = "<group>";
+		};
+
+		CB199EC545CF473282180DA2 /* SafariRootView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariRootView.swift;
+			sourceTree = "<group>";
+		};
+
+		1D988085428F456493430DC4 /* SafariStartPageView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariStartPageView.swift;
+			sourceTree = "<group>";
+		};
+
+		8E8941A4DDCA4CAE81338527 /* SafariTabsView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariTabsView.swift;
+			sourceTree = "<group>";
+		};
+
+		153D79A591484113875E6AB6 /* SafariToolbar.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariToolbar.swift;
+			sourceTree = "<group>";
+		};
+
+		8D4B21A2F2AB4E2E9AA2B68B /* SafariWebView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariWebView.swift;
+			sourceTree = "<group>";
+		};
+
+		997C16FA280E4D31B3076B59 /* ShareSheet.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ShareSheet.swift;
+			sourceTree = "<group>";
+		};
+
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9A0000070000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		9A0000080000000000000008 /* Main Group */ = {
+			isa = PBXGroup;
+			children = (
+				9A0000090000000000000009 /* OldSafari */,
+				9A0000100000000000000010 /* Assets */,
+				9A0000050000000000000005 /* Info.plist */,
+				9A0000110000000000000011 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+
+		9A0000090000000000000009 /* OldSafari */ = {
+			isa = PBXGroup;
+			children = (
+				9A0000020000000000000002 /* OldSafariApp.swift */,
+				D1A32458FFAC4994AF45F08D /* Models */,
+				24F9CA3311B6483DB0D9ABAD /* Store */,
+				53AE209C8FEA4CACBC6119F4 /* Support */,
+				732E4422771047489ABD984D /* Views */,
+			);
+			path = OldSafari;
+			sourceTree = "<group>";
+		};
+
+		9A0000100000000000000010 /* Assets */ = {
+			isa = PBXGroup;
+			children = (
+				9A0000040000000000000004 /* Assets.xcassets */,
+			);
+			path = OldSafari;
+			sourceTree = "<group>";
+		};
+
+		9A0000110000000000000011 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9A0000060000000000000006 /* OldSafari.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D1A32458FFAC4994AF45F08D /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				0BDF6CA347E8414DA2D8C1CB /* SafariBookmark.swift */,
+				5CA5A03E030F4FEBBFE7BFEB /* SafariHistoryEntry.swift */,
+				B5988DF923E8406B85DD5CBF /* SafariTab.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+
+		24F9CA3311B6483DB0D9ABAD /* Store */ = {
+			isa = PBXGroup;
+			children = (
+				E343E133CDB34AACB366768D /* SafariTabStore.swift */,
+			);
+			path = Store;
+			sourceTree = "<group>";
+		};
+
+		53AE209C8FEA4CACBC6119F4 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				9606990ECBF84402B9E96180 /* Notifications.swift */,
+				709807C2D70E44E4B17BC5B0 /* OldSafariPalette.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+
+		732E4422771047489ABD984D /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B3B235E326994DADABC64478 /* SafariAddressBar.swift */,
+				E59F08303AD8470888B9AF36 /* SafariLibraryView.swift */,
+				C98AEE52FB4A43E78EBF4E10 /* SafariProgressBar.swift */,
+				CB199EC545CF473282180DA2 /* SafariRootView.swift */,
+				1D988085428F456493430DC4 /* SafariStartPageView.swift */,
+				8E8941A4DDCA4CAE81338527 /* SafariTabsView.swift */,
+				153D79A591484113875E6AB6 /* SafariToolbar.swift */,
+				8D4B21A2F2AB4E2E9AA2B68B /* SafariWebView.swift */,
+				997C16FA280E4D31B3076B59 /* ShareSheet.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		9A0000120000000000000012 /* OldSafari */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9A0000180000000000000018 /* Build configuration list for PBXNativeTarget "OldSafari" */;
+			buildPhases = (
+				9A0000130000000000000013 /* Sources */,
+				9A0000070000000000000007 /* Frameworks */,
+				9A0000140000000000000014 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OldSafari;
+			productName = OldSafari;
+			productReference = 9A0000060000000000000006 /* OldSafari.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9A0000150000000000000015 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1640;
+			};
+			buildConfigurationList = 9A0000170000000000000017 /* Build configuration list for PBXProject "OldSafari" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 9A0000080000000000000008;
+			productRefGroup = 9A0000110000000000000011 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9A0000120000000000000012 /* OldSafari */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9A0000140000000000000014 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9A0000030000000000000003 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9A0000130000000000000013 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9A0000010000000000000001 /* OldSafariApp.swift in Sources */,
+				DCF2342063BB46488889EC8E /* SafariBookmark.swift in Sources */,
+				FD68B8E2D8254E17A2D9007C /* SafariHistoryEntry.swift in Sources */,
+				C31A147D0E404F64998AE7C0 /* SafariTab.swift in Sources */,
+				D6EB1A2CE5914FD48D39D48E /* SafariTabStore.swift in Sources */,
+				81A93F8785624F1AB088B57A /* Notifications.swift in Sources */,
+				202495A08BC940B3873F5C1E /* OldSafariPalette.swift in Sources */,
+				9360922CDCA14B3381C4D884 /* SafariAddressBar.swift in Sources */,
+				66FAF2FE785641689E9E0EB7 /* SafariLibraryView.swift in Sources */,
+				F80428D8867A4974ACC49170 /* SafariProgressBar.swift in Sources */,
+				E44F2E8814AE4D96B4B7AAA0 /* SafariRootView.swift in Sources */,
+				12406AA8C471482A94FD6A3F /* SafariStartPageView.swift in Sources */,
+				E99B67A33DE648E7A7EB93CD /* SafariTabsView.swift in Sources */,
+				901B47BBB0C545D290333A09 /* SafariToolbar.swift in Sources */,
+				6516E1930C614E969795E7BE /* SafariWebView.swift in Sources */,
+				54FD8A77A3E647768CBD4B93 /* ShareSheet.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		9A0000190000000000000019 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = OldSafari/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oldsafari.standalone;
+				PRODUCT_NAME = OldSafari;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+
+		9A0000200000000000000020 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = OldSafari/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oldsafari.standalone;
+				PRODUCT_NAME = OldSafari;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9A0000170000000000000017 /* Build configuration list for PBXProject "OldSafari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A0000190000000000000019 /* Debug */,
+				9A0000200000000000000020 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+
+		9A0000180000000000000018 /* Build configuration list for PBXNativeTarget "OldSafari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A0000190000000000000019 /* Debug */,
+				9A0000200000000000000020 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+
+	rootObject = 9A0000150000000000000015 /* Project object */;
+}
