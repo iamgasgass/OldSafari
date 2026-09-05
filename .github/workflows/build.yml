@@ -34,7 +34,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          test -d "$DEVELOPER_DIR"
+          if [ ! -d "$DEVELOPER_DIR" ]; then
+            LATEST="$(ls -d /Applications/Xcode*.app | sort -V | tail -n 1)"
+            echo "Pinned Xcode not found, falling back to $LATEST"
+            echo "DEVELOPER_DIR=$LATEST/Contents/Developer" >> "$GITHUB_ENV"
+            export DEVELOPER_DIR="$LATEST/Contents/Developer"
+          fi
 
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
@@ -99,12 +104,14 @@ jobs:
             -derivedDataPath "$BUILD_DIR" \
             PRODUCT_NAME=OldSafari \
             EXECUTABLE_NAME=OldSafari \
-            PRODUCT_BUNDLE_IDENTIFIER=com.oldsafari.standalone \
+            PRODUCT_BUNDLE_IDENTIFIER=com.iamgasgass.OldSafari \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             COMPILER_INDEX_STORE_ENABLE=NO \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
+            GCC_TREAT_WARNINGS_AS_ERRORS=NO \
             ONLY_ACTIVE_ARCH=NO \
             2>&1 | tee "$LOG"
 
@@ -191,6 +198,19 @@ jobs:
           echo ""
           echo "Architectures:"
           lipo -info "$BINARY"
+
+          echo ""
+          echo "App icon:"
+          ICONS="$(find "$APP" -maxdepth 1 -name 'AppIcon*.png' -print)"
+          if [ -z "$ICONS" ]; then
+            echo "::error::No AppIcon*.png inside the bundle (asset catalog icon not compiled)"
+            exit 1
+          fi
+          echo "$ICONS"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIcons" "$INFO" || {
+            echo "::error::CFBundleIcons missing from Info.plist"
+            exit 1
+          }
 
       - name: Create IPA
         shell: bash
