@@ -1,5 +1,9 @@
 import SwiftUI
 
+/// Full-screen Safari shell. The page is laid out *between* the legacy top
+/// chrome and bottom toolbar instead of being rendered behind them. This keeps
+/// the browser immersive while preserving the physical geometry of classic
+/// Safari: top chrome -> web content -> bottom navigation bar.
 struct SafariRootView: View {
     @StateObject private var store = SafariTabStore()
 
@@ -9,16 +13,23 @@ struct SafariRootView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            if let tab = store.selected {
-                ZStack(alignment: .top) {
-                    pageContent(for: tab)
-                        .id(tab.id)
-                        .ignoresSafeArea()
-
+            ZStack {
+                if let tab = store.selected {
                     VStack(spacing: 0) {
+                        // The status-bar inset belongs to Safari's chrome, not
+                        // to the web page. Consequently the first web pixel
+                        // begins immediately below the URL/search controls.
                         chrome(for: tab, topInset: geometry.safeAreaInsets.top)
                             .id("chrome-\(tab.id.uuidString)")
-                        Spacer(minLength: 0)
+                            .zIndex(2)
+
+                        pageContent(for: tab)
+                            .id("page-\(tab.id.uuidString)")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                            .background(tab.isPrivate ? Color.black : Color.white)
+                            .zIndex(1)
+
                         SafariToolbar(
                             tab: tab,
                             isPrivate: tab.isPrivate,
@@ -28,13 +39,15 @@ struct SafariRootView: View {
                             onLibrary: { withAnimation(.easeOut(duration: 0.18)) { showLibrary = true } },
                             onShare: { withAnimation(.easeOut(duration: 0.18)) { showShare = true } }
                         )
+                        .zIndex(2)
                     }
                     .ignoresSafeArea()
+                    .preferredColorScheme(tab.isPrivate ? .dark : .light)
 
-                    // Custom full-screen overlays deliberately stay in the same
-                    // view tree as the selected WKWebView. No NavigationStack or
-                    // sheet owns the selection, so changing pages cannot display
-                    // a stale tab after dismissing Pages/Library/Share.
+                    // These are intentionally overlays rather than sheets so
+                    // Pages, Bookmarks/History and Share all operate on the
+                    // same UUID-selected SafariTab and retain the full-screen
+                    // browser underneath them.
                     if showTabs {
                         SafariTabsView(store: store) {
                             withAnimation(.easeOut(duration: 0.18)) { showTabs = false }
@@ -58,16 +71,16 @@ struct SafariRootView: View {
                         .transition(.move(edge: .bottom))
                         .zIndex(22)
                     }
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .animation(.easeOut(duration: 0.18), value: showTabs)
-                .animation(.easeOut(duration: 0.18), value: showLibrary)
-                .animation(.easeOut(duration: 0.18), value: showShare)
-                .preferredColorScheme(tab.isPrivate ? .dark : .light)
-            } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(.systemBackground))
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
+            .animation(.easeOut(duration: 0.18), value: showTabs)
+            .animation(.easeOut(duration: 0.18), value: showLibrary)
+            .animation(.easeOut(duration: 0.18), value: showShare)
         }
     }
 
