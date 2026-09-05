@@ -2,7 +2,6 @@ import Combine
 import Foundation
 
 final class SafariTabStore: ObservableObject {
-
     @Published var tabs: [SafariTab] = []
     @Published var selectedID: UUID?
     @Published var isPrivateMode: Bool = false
@@ -19,6 +18,9 @@ final class SafariTabStore: ObservableObject {
         tabs.filter { $0.isPrivate == isPrivateMode }
     }
 
+    /// Selection is ID based and is always reconciled against the currently
+    /// visible tab set. This is the important part of the Pages -> Library ->
+    /// ShareSheet fix: overlays never cache a WKWebView or a stale array index.
     var selected: SafariTab? {
         if let selectedID,
            let match = tabs.first(where: { $0.id == selectedID }),
@@ -35,29 +37,24 @@ final class SafariTabStore: ObservableObject {
     @discardableResult
     func addTab(url: URL? = nil) -> SafariTab {
         let tab = SafariTab(url: url, isPrivate: isPrivateMode)
-
-        tab.onFinishedLoading = { [weak self] finished in
-            self?.recordHistoryIfNeeded(for: finished)
-        }
-
+        attachCallbacks(to: tab)
         tabs.append(tab)
         selectedID = tab.id
         return tab
     }
 
     func close(_ tab: SafariTab) {
-        let siblings = tabs.filter { $0.isPrivate == tab.isPrivate }
         let wasSelected = tab.id == selectedID
+        let visibleBefore = visibleTabs
 
         tabs.removeAll { $0.id == tab.id }
 
-        if siblings.count <= 1 {
+        // Safari keeps at least one page in each mode. If the last visible page
+        // is closed, create a blank replacement and make it selected immediately.
+        if visibleBefore.count <= 1 {
             let replacement = SafariTab(url: nil, isPrivate: tab.isPrivate)
-            replacement.onFinishedLoading = { [weak self] finished in
-                self?.recordHistoryIfNeeded(for: finished)
-            }
+            attachCallbacks(to: replacement)
             tabs.append(replacement)
-
             if tab.isPrivate == isPrivateMode {
                 selectedID = replacement.id
             }
@@ -65,12 +62,20 @@ final class SafariTabStore: ObservableObject {
         }
 
         if wasSelected {
+            // Select the page adjacent to the closed one. Prefer the previous
+            // page, falling back to the last remaining page.
             let remaining = tabs.filter { $0.isPrivate == tab.isPrivate }
-            selectedID = remaining.last?.id
+            if let oldIndex = visibleBefore.firstIndex(of: tab) {
+                let replacementIndex = max(0, min(oldIndex - 1, remaining.count - 1))
+                selectedID = remaining[replacementIndex].id
+            } else {
+                selectedID = remaining.last?.id
+            }
         }
     }
 
     func select(_ tab: SafariTab) {
+        guard tabs.contains(where: { $0.id == tab.id }) else { return }
         selectedID = tab.id
         if tab.isPrivate != isPrivateMode {
             isPrivateMode = tab.isPrivate
@@ -79,50 +84,42 @@ final class SafariTabStore: ObservableObject {
 
     func togglePrivateMode() {
         isPrivateMode.toggle()
-
         if visibleTabs.isEmpty {
             addTab()
+        } else if let current = selected, current.isPrivate == isPrivateMode {
+            selectedID = current.id
         } else {
             selectedID = visibleTabs.last?.id
         }
     }
 
     func addBookmark(title: String, url: String) {
-        guard !url.isEmpty else { return }
-        guard !bookmarks.contains(where: { $0.url == url }) else { return }
-
-        bookmarks.append(
-            SafariBookmark(
-                title: title.isEmpty ? url : title,
-                url: url
-            )
-        )
+        guard !url.isEmpty, !bookmarks.contains(where: { $0.url == url }) else { return }
+        bookmarks.append(SafariBookmark(title: title.isEmpty ? url : title, url: url))
     }
 
     func removeBookmarks(at offsets: IndexSet) {
         bookmarks.remove(atOffsets: offsets)
     }
 
+    private func attachCallbacks(to tab: SafariTab) {
+        tab.onFinishedLoading = { [weak self] finished in
+            self?.recordHistoryIfNeeded(for: finished)
+        }
+    }
+
     private func recordHistoryIfNeeded(for tab: SafariTab) {
         guard !tab.isPrivate, let url = tab.url else { return }
-        guard let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return }
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
 
         let normalizedURL = url.absoluteString
+        let normalizedTitle = tab.title.isEmpty ? normalizedURL : tab.title
 
-        // Avoid flooding history on reloads and repeated WebKit isLoading
-        // transitions for the same top-level URL.
-        if let first = history.first,
-           first.url == normalizedURL,
-           first.title == (tab.title.isEmpty ? normalizedURL : tab.title) {
+        if let first = history.first, first.url == normalizedURL, first.title == normalizedTitle {
             return
         }
 
-        let entry = SafariHistoryEntry(
-            title: tab.title.isEmpty ? normalizedURL : tab.title,
-            url: normalizedURL
-        )
-        history.insert(entry, at: 0)
+        history.insert(SafariHistoryEntry(title: normalizedTitle, url: normalizedURL), at: 0)
     }
 
     func removeHistory(at offsets: IndexSet, in group: [SafariHistoryEntry]) {
