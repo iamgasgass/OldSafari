@@ -174,7 +174,7 @@ struct SafariActionsView: View {
                         bookmarkTitle = tab.title.isEmpty ? (currentURL?.host ?? "Untitled") : tab.title
                         withAnimation(.linear(duration: 0.25)) { showAddBookmark = true }
                     },
-                    OldOSSheetButton(title: "Add to Home Screen") {},
+                    OldOSSheetButton(title: "Add to Home Screen") { addToHomeScreen() },
                     OldOSSheetButton(title: "Mail Link to this Page") { mailLink() },
                     OldOSSheetButton(title: "Copy") { copyLink() },
                     OldOSSheetButton(title: "Find on Page") { findOnPage() },
@@ -219,6 +219,15 @@ struct SafariActionsView: View {
         if let mailto = URL(string: "mailto:?subject=\(subject)&body=\(body)") {
             UIApplication.shared.open(mailto, options: [:], completionHandler: nil)
         }
+        onClose()
+    }
+
+    /// Only the system browser can pin a web clip, so the page is handed over
+    /// to it and the user finishes there, instead of a dead button.
+    private func addToHomeScreen() {
+        guard let currentURL else { return }
+        UIPasteboard.general.string = currentURL.absoluteString
+        UIApplication.shared.open(currentURL, options: [:], completionHandler: nil)
         onClose()
     }
 
@@ -289,6 +298,9 @@ struct SafariActionsView: View {
 /// OldOS `add_bookmark_view`, kept full screen instead of the 320x480 frame.
 struct SafariAddBookmarkView: View {
     let theme: OldOSSafariTheme
+    /// "Add Bookmark" when saving a page, "Edit Bookmark" when the Bookmarks
+    /// screen reuses the same iOS 6 form.
+    var heading: String = "Add Bookmark"
     @Binding var title: String
     let url: URL?
     let topInset: CGFloat
@@ -306,7 +318,7 @@ struct SafariAddBookmarkView: View {
 
                 VStack(spacing: 0) {
                     OldOSTitleBar(
-                        title: "Add Bookmark",
+                        title: heading,
                         theme: theme,
                         leading: OldOSBarButton("Cancel", type: theme.secondaryButton, action: onCancel),
                         trailing: OldOSBarButton("Save", type: .blue, action: onSave)

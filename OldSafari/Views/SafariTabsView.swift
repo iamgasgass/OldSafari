@@ -21,7 +21,11 @@ struct SafariTabsView: View {
             let width = geometry.size.width
             let height = geometry.size.height
             let step = width * 0.70
-            let cardHeight = max(height - (topInset + 45 + 6 + bottomInset), 120)
+            // The card must have the exact aspect of the live page area, so the
+            // shrunken web view lays out like the real thing: screen minus the
+            // status bar, the 68pt search row and the 45pt toolbar (+ lift).
+            let chrome = topInset + 68 + 45 + 6 + bottomInset
+            let cardHeight = max(height - chrome, 120)
 
             ZStack {
                 LinearGradient(oldOS: theme.tabsBackground).ignoresSafeArea()
@@ -36,7 +40,7 @@ struct SafariTabsView: View {
                             .zIndex(distance < 0.5 ? 1 : 0)
                     }
                 }
-                .offset(y: (topInset - 45 - 6 - bottomInset) / 2)
+                .offset(y: (topInset + 68 - 45 - 6 - bottomInset) / 2)
 
                 VStack(spacing: 0) {
                     Spacer().frame(height: max(height * (1.0 / 9.0), topInset + 8))

@@ -39,10 +39,11 @@ struct SafariToolbar: View {
     var onNewFolder: () -> Void = {}
     var onTogglePrivate: () -> Void = {}
 
-    /// Long press history previews for the two navigation arrows.
-    var backHistory: () -> [SafariNavigationItem] = { [] }
-    var forwardHistory: () -> [SafariNavigationItem] = { [] }
-    var onNavigateHistory: (SafariNavigationItem) -> Void = { _ in }
+    /// Long presses: tab history on the two arrows, page actions on the
+    /// pages button.
+    var onBackHistory: (() -> Void)? = nil
+    var onForwardHistory: (() -> Void)? = nil
+    var onTabsLongPress: (() -> Void)? = nil
 
     private var tabImage: String {
         let clamped = min(max(tabCount, 1), 8)
@@ -55,24 +56,26 @@ struct SafariToolbar: View {
                 switch mode {
                 case .browsing:
                     HStack(spacing: 0) {
-                        OldOSToolBarMenuButton(
+                        OldOSToolBarButton(
                             image: "NavBack",
                             enabled: canGoBack,
-                            items: backHistory,
-                            onSelect: onNavigateHistory,
-                            action: onBack
+                            action: onBack,
+                            onLongPress: onBackHistory
                         )
 
-                        OldOSToolBarMenuButton(
+                        OldOSToolBarButton(
                             image: "NavForward",
                             enabled: canGoForward,
-                            items: forwardHistory,
-                            onSelect: onNavigateHistory,
-                            action: onForward
+                            action: onForward,
+                            onLongPress: onForwardHistory
                         )
                         OldOSToolBarButton(image: "NavAction", action: onShare)
                         OldOSToolBarButton(image: "NavBookmarks", action: onBookmarks)
-                        OldOSToolBarButton(image: tabImage, action: onTabs)
+                        OldOSToolBarButton(
+                            image: tabImage,
+                            action: onTabs,
+                            onLongPress: onTabsLongPress
+                        )
                     }
                     .padding([.leading, .trailing], 6)
                     .transition(.opacity)

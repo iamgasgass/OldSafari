@@ -11,6 +11,7 @@ struct SafariWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let webView = tab.webView
+        tab.activateIfNeeded()
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
@@ -24,6 +25,7 @@ struct SafariWebView: UIViewRepresentable {
         webView.allowsLinkPreview = true
         webView.scrollView.keyboardDismissMode = .interactive
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.scrollsToTop = true
 
         // Pull to refresh, like the current Safari. Guarded because the same
         // WKWebView is also mounted by the tab switcher.
@@ -124,6 +126,92 @@ struct SafariWebView: UIViewRepresentable {
             withError error: Error
         ) {
             webView.scrollView.refreshControl?.endRefreshing()
+        }
+
+        // MARK: target="_blank" and window.open
+
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            guard let url = navigationAction.request.url else { return nil }
+
+            if let onOpenInNewTab {
+                onOpenInNewTab(url)
+            } else {
+                webView.load(navigationAction.request)
+            }
+            return nil
+        }
+
+        // MARK: JavaScript panels
+
+        private func present(_ alert: UIAlertController, from webView: WKWebView) {
+            guard let controller = webView.window?.rootViewController else { return }
+            var top = controller
+            while let presented = top.presentedViewController { top = presented }
+            top.present(alert, animated: true)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptAlertPanelWithMessage message: String,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping () -> Void
+        ) {
+            let alert = UIAlertController(
+                title: frame.request.url?.host,
+                message: message,
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                completionHandler()
+            })
+            present(alert, from: webView)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptConfirmPanelWithMessage message: String,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping (Bool) -> Void
+        ) {
+            let alert = UIAlertController(
+                title: frame.request.url?.host,
+                message: message,
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+                completionHandler(false)
+            })
+            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                completionHandler(true)
+            })
+            present(alert, from: webView)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            runJavaScriptTextInputPanelWithPrompt prompt: String,
+            defaultText: String?,
+            initiatedByFrame frame: WKFrameInfo,
+            completionHandler: @escaping (String?) -> Void
+        ) {
+            let alert = UIAlertController(
+                title: frame.request.url?.host,
+                message: prompt,
+                preferredStyle: .alert
+            )
+            alert.addTextField { $0.text = defaultText }
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+                completionHandler(nil)
+            })
+            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                completionHandler(alert.textFields?.first?.text)
+            })
+            present(alert, from: webView)
         }
 
         // MARK: Long press on a link

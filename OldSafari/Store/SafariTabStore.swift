@@ -36,16 +36,45 @@ final class SafariTabStore: ObservableObject {
         select(tab)
     }
 
+    /// Modern Safari comes back with the pages you left open; iOS 6 did the
+    /// same within a session.  Only non private pages are ever written out.
+    private static let sessionKey = "oldsafari.session.urls"
+
     init() {
+        let saved = (UserDefaults.standard.array(forKey: Self.sessionKey) as? [String]) ?? []
+        let restored = saved.prefix(8).compactMap { URL(string: $0) }
+
+        if restored.isEmpty {
+            addTab()
+        } else {
+            for url in restored { addTab(url: url, deferLoad: true) }
+            selectedID = tabs.first?.id
+        }
+    }
+
+    private func persistSession() {
+        let urls = tabs
+            .filter { !$0.isPrivate }
+            .compactMap { $0.url?.absoluteString }
+        UserDefaults.standard.set(Array(urls.prefix(8)), forKey: Self.sessionKey)
+    }
+
+    /// Pages button long press: wipe every page of the current mode and start
+    /// over with a single blank one, the way "Close All Tabs" does today.
+    func closeAll() {
+        let doomed = Set(visibleTabs.map { $0.id })
+        tabs.removeAll { doomed.contains($0.id) }
+        selectedID = nil
         addTab()
+        persistSession()
     }
 
     @discardableResult
-    func addTab(url: URL? = nil) -> SafariTab {
+    func addTab(url: URL? = nil, deferLoad: Bool = false) -> SafariTab {
         if visibleTabs.count >= 8 {
             return selected ?? tabs.first!
         }
-        let tab = SafariTab(url: url, isPrivate: isPrivateMode)
+        let tab = SafariTab(url: url, isPrivate: isPrivateMode, deferLoad: deferLoad)
         attachCallbacks(to: tab)
         tabs.append(tab)
         selectedID = tab.id
@@ -53,6 +82,7 @@ final class SafariTabStore: ObservableObject {
     }
 
     func close(_ tab: SafariTab) {
+        defer { persistSession() }
         let wasSelected = tab.id == selectedID
         let visibleBefore = visibleTabs
 
@@ -111,6 +141,13 @@ final class SafariTabStore: ObservableObject {
         bookmarks.remove(atOffsets: offsets)
     }
 
+    func renameBookmark(id: UUID, title: String) {
+        guard let index = bookmarks.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Keep the identity so the row does not jump while it is being edited.
+        bookmarks[index].title = trimmed.isEmpty ? bookmarks[index].url : trimmed
+    }
+
     func removeBookmark(id: UUID) {
         bookmarks.removeAll { $0.id == id }
     }
@@ -118,6 +155,7 @@ final class SafariTabStore: ObservableObject {
     private func attachCallbacks(to tab: SafariTab) {
         tab.onFinishedLoading = { [weak self] finished in
             self?.recordHistoryIfNeeded(for: finished)
+            self?.persistSession()
         }
     }
 

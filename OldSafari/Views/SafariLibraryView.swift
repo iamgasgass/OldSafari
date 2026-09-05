@@ -16,6 +16,8 @@ struct SafariLibraryView: View {
     @State private var isEditingHistory = false
     @State private var armedHistory: UUID?
     @State private var confirmClear = false
+    @State private var editingBookmark: SafariBookmark?
+    @State private var editingBookmarkTitle = ""
 
     var body: some View {
         ZStack {
@@ -49,6 +51,27 @@ struct SafariLibraryView: View {
                 }
 
                 bottomBar
+            }
+
+            if let editingBookmark {
+                SafariAddBookmarkView(
+                    theme: theme,
+                    heading: "Edit Bookmark",
+                    title: $editingBookmarkTitle,
+                    url: URL(string: editingBookmark.url),
+                    topInset: topInset,
+                    onCancel: {
+                        oldOSHideKeyboard()
+                        withAnimation(.linear(duration: 0.22)) { self.editingBookmark = nil }
+                    },
+                    onSave: {
+                        oldOSHideKeyboard()
+                        store.renameBookmark(id: editingBookmark.id, title: editingBookmarkTitle)
+                        withAnimation(.linear(duration: 0.22)) { self.editingBookmark = nil }
+                    }
+                )
+                .transition(.move(edge: .trailing))
+                .zIndex(6)
             }
 
             if confirmClear {
@@ -92,8 +115,15 @@ struct SafariLibraryView: View {
                     theme: theme,
                     showsChevron: !isEditing,
                     action: {
-                        guard !isEditing else { return }
-                        open(bookmark.url)
+                        if isEditing {
+                            // iOS 6 opened the bookmark editor from Edit mode.
+                            editingBookmarkTitle = bookmark.title
+                            withAnimation(.linear(duration: 0.22)) {
+                                editingBookmark = bookmark
+                            }
+                        } else {
+                            open(bookmark.url)
+                        }
                     },
                     accessory: {
                         HStack(spacing: 0) {

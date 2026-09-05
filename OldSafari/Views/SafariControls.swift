@@ -9,11 +9,21 @@ struct OldOSToolBarButton: View {
     let image: String
     var enabled: Bool = true
     var action: () -> Void
+    /// Optional long press, used by the two arrows for the tab history and by
+    /// the pages button for "Close All Pages".
+    var onLongPress: (() -> Void)? = nil
+
+    @State private var didLongPress = false
 
     var body: some View {
         HStack {
             Spacer(minLength: 0)
             Button {
+                // The long press already handled this touch.
+                if didLongPress {
+                    didLongPress = false
+                    return
+                }
                 guard enabled else { return }
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 action()
@@ -21,6 +31,15 @@ struct OldOSToolBarButton: View {
                 Image(image)
             }
             .buttonStyle(.plain)
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.38)
+                    .onEnded { _ in
+                        guard enabled, let onLongPress else { return }
+                        didLongPress = true
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        onLongPress()
+                    }
+            )
             .allowsHitTesting(enabled)
             Spacer(minLength: 0)
         }
@@ -29,44 +48,160 @@ struct OldOSToolBarButton: View {
     }
 }
 
-/// Same artwork as `OldOSToolBarButton`, but a long press opens the tab's
-/// back/forward list the way the current Safari does.  The menu itself is a
-/// stock UIKit menu, so it follows every system appearance setting.
-struct OldOSToolBarMenuButton: View {
-    let image: String
-    var enabled: Bool = true
-    var systemImage: String = "clock"
-    var items: () -> [SafariNavigationItem]
-    var onSelect: (SafariNavigationItem) -> Void
-    var action: () -> Void
+/// A long press on one of the toolbar arrows asks for this: the tab's
+/// back/forward list, drawn with the same 2012 sheet metal as the rest of the
+/// app instead of a stock UIKit menu.
+struct SafariHistoryRequest: Identifiable {
+    let id = UUID()
+    let title: String
+    let items: [SafariNavigationItem]
+    /// Horizontal position, 0…1, of the button that opened the panel.
+    let anchor: CGFloat
+}
+
+struct SafariHistoryPreviewPanel: View {
+    let theme: OldOSSafariTheme
+    let request: SafariHistoryRequest
+    /// Distance from the bottom of the screen to the top of the toolbar.
+    var liftFromBottom: CGFloat = 0
+    let onSelect: (SafariNavigationItem) -> Void
+    let onDismiss: () -> Void
+
+    private let rowHeight: CGFloat = 44
+    private let headerHeight: CGFloat = 30
 
     var body: some View {
-        HStack {
-            Spacer(minLength: 0)
+        GeometryReader { geometry in
+            let width = min(geometry.size.width - 24, 420)
+            let available = geometry.size.height - liftFromBottom - 90
+            let wanted = headerHeight + CGFloat(max(request.items.count, 1)) * rowHeight
+            let height = max(min(wanted, available), headerHeight + rowHeight)
+            let anchorX = min(
+                max(request.anchor * geometry.size.width, 24),
+                geometry.size.width - 24
+            )
+            let left = min(
+                max(anchorX - width / 2, 12),
+                max(geometry.size.width - width - 12, 12)
+            )
 
-            Menu {
-                ForEach(items()) { entry in
-                    Button {
-                        onSelect(entry)
-                    } label: {
-                        Label(entry.title, systemImage: systemImage)
+            ZStack(alignment: .topLeading) {
+                theme.scrim.opacity(0.4)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { onDismiss() }
+
+                VStack(spacing: 0) {
+                    panelBody(height: height)
+
+                    OldOSPanelPointer()
+                        .fill(LinearGradient(oldOS: theme.shareBody))
+                        .frame(width: 20, height: 9)
+                        .offset(x: anchorX - left - 10)
+                        .frame(width: width, alignment: .leading)
+                }
+                .frame(width: width)
+                .offset(
+                    x: left,
+                    y: geometry.size.height - liftFromBottom - height - 9 - 4
+                )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func panelBody(height: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Rectangle()
+                    .fill(LinearGradient(oldOS: theme.shareStrip))
+                    .oldOSInnerShadowBottom(color: Color.white.opacity(0.98), radius: 0.1)
+
+                Text(request.title)
+                    .font(OldOSFont.bold(13.25))
+                    .foregroundColor(theme.shareButtonText)
+                    .shadow(
+                        color: theme.shareButtonTextShadow,
+                        radius: 0,
+                        x: 0,
+                        y: theme.shareButtonTextShadowY
+                    )
+            }
+            .frame(height: headerHeight)
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 0) {
+                    ForEach(Array(request.items.enumerated()), id: \.element.id) { index, entry in
+                        row(entry, isLast: index == request.items.count - 1)
                     }
                 }
-            } label: {
-                Image(image)
-            } primaryAction: {
-                guard enabled else { return }
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                action()
             }
-            .buttonStyle(.plain)
-            .menuOrder(.fixed)
-            .allowsHitTesting(enabled)
-
-            Spacer(minLength: 0)
         }
-        .opacity(enabled ? 1 : 0.25)
-        .frame(maxWidth: .infinity)
+        .background(LinearGradient(oldOS: theme.shareBody))
+        .frame(height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .oldOSAddBorder(
+            LinearGradient(oldOS: theme.shareButtonOuterStroke),
+            width: 0.5,
+            cornerRadius: 12
+        )
+        .shadow(color: Color.black.opacity(0.5), radius: 14, x: 0, y: 5)
+    }
+
+    private func row(_ entry: SafariNavigationItem, isLast: Bool) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onSelect(entry)
+        } label: {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Color.white.opacity(0.5))
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(entry.title)
+                            .font(OldOSFont.bold(15))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+
+                        if !entry.host.isEmpty {
+                            Text(entry.host)
+                                .font(OldOSFont.regular(11))
+                                .foregroundColor(Color.white.opacity(0.45))
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(Color.white.opacity(0.35))
+                }
+                .padding([.leading, .trailing], 14)
+                .frame(height: rowHeight - 1)
+
+                Rectangle()
+                    .fill(Color.white.opacity(isLast ? 0 : 0.09))
+                    .frame(height: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Little triangle under the history panel, pointing at the arrow that opened it.
+struct OldOSPanelPointer: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 

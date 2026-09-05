@@ -10,7 +10,7 @@
     <string>OldSafari</string>
 
     <key>CFBundleIdentifier</key>
-    <string>com.oldsafari.standalone</string>
+    <string>com.iamgasgass.OldSafari</string>
 
     <key>CFBundleName</key>
     <string>OldSafari</string>

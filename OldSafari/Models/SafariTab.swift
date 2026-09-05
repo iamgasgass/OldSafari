@@ -37,7 +37,12 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
-    init(url: URL?, isPrivate: Bool) {
+    /// A restored page keeps its URL but does not hit the network until the
+    /// browser actually mounts its web view, so a cold launch with eight open
+    /// pages costs one request instead of eight.
+    private var pendingURL: URL?
+
+    init(url: URL?, isPrivate: Bool, deferLoad: Bool = false) {
         self.isPrivate = isPrivate
 
         let configuration = WKWebViewConfiguration()
@@ -61,8 +66,21 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
         observeWebView()
 
         if let url {
-            webView.load(URLRequest(url: url))
+            if deferLoad {
+                pendingURL = url
+                self.url = url
+                self.isSecure = url.scheme?.lowercased() == "https"
+            } else {
+                webView.load(URLRequest(url: url))
+            }
         }
+    }
+
+    /// Called when the web view is mounted for the first time.
+    func activateIfNeeded() {
+        guard let pendingURL else { return }
+        self.pendingURL = nil
+        webView.load(URLRequest(url: pendingURL))
     }
 
     static func == (lhs: SafariTab, rhs: SafariTab) -> Bool {
@@ -78,8 +96,12 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
         webView.publisher(for: \.url)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] newURL in
-                self?.url = newURL
-                self?.isSecure = newURL?.scheme?.lowercased() == "https"
+                guard let self else { return }
+                // A restored page has a URL before WebKit does; do not let the
+                // initial nil from the observer wipe it.
+                if newURL == nil, self.pendingURL != nil { return }
+                self.url = newURL
+                self.isSecure = newURL?.scheme?.lowercased() == "https"
             }
             .store(in: &cancellables)
 

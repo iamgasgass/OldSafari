@@ -57,6 +57,8 @@ private struct SafariSelectedTabView: View {
     @Binding var showLibrary: Bool
     @Binding var showShare: Bool
 
+    @State private var historyRequest: SafariHistoryRequest?
+    @State private var showPageActions = false
     @State private var editingField: SafariSearchField?
     @State private var urlText: String = ""
     @State private var googleText: String = ""
@@ -94,6 +96,51 @@ private struct SafariSelectedTabView: View {
                 .zIndex(20)
             }
 
+            if let historyRequest {
+                SafariHistoryPreviewPanel(
+                    theme: theme,
+                    request: historyRequest,
+                    liftFromBottom: bottomInset + 51,
+                    onSelect: { entry in
+                        tab.go(to: entry)
+                        withAnimation(.easeOut(duration: 0.18)) { self.historyRequest = nil }
+                    },
+                    onDismiss: {
+                        withAnimation(.easeOut(duration: 0.18)) { self.historyRequest = nil }
+                    }
+                )
+                .transition(
+                    .scale(scale: 0.9, anchor: .bottom).combined(with: .opacity)
+                )
+                .zIndex(25)
+            }
+
+            if showPageActions {
+                OldOSActionSheet(
+                    theme: theme,
+                    buttons: [
+                        OldOSSheetButton(title: "New Page") {
+                            withAnimation(.linear(duration: 0.2)) { showPageActions = false }
+                            store.addTab()
+                        },
+                        OldOSSheetButton(title: "Close This Page") {
+                            withAnimation(.linear(duration: 0.2)) { showPageActions = false }
+                            store.close(tab)
+                        },
+                        OldOSSheetButton(title: "Close All Pages", destructive: true) {
+                            withAnimation(.linear(duration: 0.2)) { showPageActions = false }
+                            store.closeAll()
+                        }
+                    ],
+                    bottomInset: bottomInset,
+                    onCancel: {
+                        withAnimation(.linear(duration: 0.2)) { showPageActions = false }
+                    }
+                )
+                .transition(.move(edge: .bottom))
+                .zIndex(28)
+            }
+
             if showShare {
                 SafariActionsView(
                     store: store,
@@ -116,6 +163,17 @@ private struct SafariSelectedTabView: View {
         }
         .onReceive(tab.$url) { _ in
             if editingField == nil { syncURLText() }
+        }
+    }
+
+    private func presentHistory(title: String, items: [SafariNavigationItem], anchor: CGFloat) {
+        guard !items.isEmpty else { return }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+            historyRequest = SafariHistoryRequest(
+                title: title,
+                items: Array(items.prefix(12)),
+                anchor: anchor
+            )
         }
     }
 
@@ -164,9 +222,15 @@ private struct SafariSelectedTabView: View {
                 onShare: { withAnimation(.linear(duration: 0.25)) { showShare = true } },
                 onBookmarks: { withAnimation(.linear(duration: 0.25)) { showLibrary = true } },
                 onTabs: { withAnimation(.linear(duration: 0.25)) { showTabs = true } },
-                backHistory: { tab.backItems },
-                forwardHistory: { tab.forwardItems },
-                onNavigateHistory: { entry in tab.go(to: entry) }
+                onBackHistory: {
+                    presentHistory(title: "Back", items: tab.backItems, anchor: 0.1)
+                },
+                onForwardHistory: {
+                    presentHistory(title: "Forward", items: tab.forwardItems, anchor: 0.3)
+                },
+                onTabsLongPress: {
+                    withAnimation(.linear(duration: 0.25)) { showPageActions = true }
+                }
             )
             .zIndex(2)
         }
