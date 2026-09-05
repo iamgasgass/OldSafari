@@ -1,86 +1,70 @@
 import SwiftUI
 
-public struct iOS6Toolbar: View {
-    var canGoBack: Bool
-    var canGoForward: Bool
-    var isPrivate: Bool
-    var tabCount: Int
-    var onBack: () -> Void
-    var onForward: () -> Void
-    var onShare: () -> Void
-    var onBookmarks: () -> Void
-    var onTabs: () -> Void
-
-    public var body: some View {
-        VStack(spacing: 0) {
-            // Top highlight border line
-            Rectangle()
-                .fill(isPrivate ? Color.white.opacity(0.12) : Color.white.opacity(0.45))
-                .frame(height: 1)
+struct iOS6Toolbar: View {
+    @ObservedObject var state: SafariState
+    
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                gradient: state.isPrivateMode ? iOS6Theme.privateBottomBarGradient : iOS6Theme.bottomBarGradient,
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .overlay(
+                VStack {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.5))
+                        .frame(height: 1)
+                    Spacer()
+                }
+            )
             
             HStack {
                 Spacer()
-                // Back Button
-                Button(action: onBack) {
+                
+                Button(action: { state.webView?.goBack() }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(canGoBack ? (isPrivate ? .white : Color(red: 0.15, green: 0.18, blue: 0.22)) : Color.gray.opacity(0.4))
-                        .shadow(color: canGoBack ? Color.white.opacity(0.4) : Color.clear, radius: 0, x: 0, y: 1)
                 }
-                .disabled(!canGoBack)
+                .disabled(!state.canGoBack)
+                .buttonStyle(iOS6ButtonStyle(isPrivate: state.isPrivateMode))
                 
                 Spacer()
-                // Forward Button
-                Button(action: onForward) {
+                
+                Button(action: { state.webView?.goForward() }) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(canGoForward ? (isPrivate ? .white : Color(red: 0.15, green: 0.18, blue: 0.22)) : Color.gray.opacity(0.4))
-                        .shadow(color: canGoForward ? Color.white.opacity(0.4) : Color.clear, radius: 0, x: 0, y: 1)
                 }
-                .disabled(!canGoForward)
+                .disabled(!state.canGoForward)
+                .buttonStyle(iOS6ButtonStyle(isPrivate: state.isPrivateMode))
                 
                 Spacer()
-                // Share Button (iOS 6 Action Icon)
-                Button(action: onShare) {
+                
+                Button(action: { state.showShareSheet.toggle() }) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(isPrivate ? .white : Color(red: 0.15, green: 0.18, blue: 0.22))
-                        .shadow(color: Color.white.opacity(0.4), radius: 0, x: 0, y: 1)
+                        .font(.system(size: 18, weight: .bold))
                 }
+                .buttonStyle(iOS6ButtonStyle(isPrivate: state.isPrivateMode))
                 
                 Spacer()
-                // Bookmarks Button
-                Button(action: onBookmarks) {
-                    Image(systemName: "book")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(isPrivate ? .white : Color(red: 0.15, green: 0.18, blue: 0.22))
-                        .shadow(color: Color.white.opacity(0.4), radius: 0, x: 0, y: 1)
+                
+                Button(action: { state.showBookmarks.toggle() }) {
+                    Image(systemName: "book.fill")
+                        .font(.system(size: 18, weight: .bold))
                 }
+                .buttonStyle(iOS6ButtonStyle(isPrivate: state.isPrivateMode))
                 
                 Spacer()
-                // Tabs / Pages Button with badge
-                Button(action: onTabs) {
-                    ZStack {
-                        Image(systemName: "square.on.square")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(isPrivate ? .white : Color(red: 0.15, green: 0.18, blue: 0.22))
-                        
-                        Text("\(tabCount)")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(isPrivate ? Color.black : Color.white)
-                            .offset(x: 1, y: 1)
-                    }
-                    .shadow(color: Color.white.opacity(0.4), radius: 0, x: 0, y: 1)
+                
+                Button(action: { state.isPrivateMode.toggle() }) {
+                    Image(systemName: state.isPrivateMode ? "eyeglasses" : "square.on.square")
+                        .font(.system(size: 18, weight: .bold))
                 }
+                .buttonStyle(iOS6ButtonStyle(isPrivate: state.isPrivateMode, isActive: state.isPrivateMode))
+                
                 Spacer()
             }
-            .frame(height: 43)
-            .background(isPrivate ? iOS6Theme.toolbarGradientPrivate : iOS6Theme.toolbarGradientNormal)
-            
-            // Bottom border line
-            Rectangle()
-                .fill(Color.black.opacity(0.7))
-                .frame(height: 1)
         }
+        .frame(height: 44)
     }
 }
