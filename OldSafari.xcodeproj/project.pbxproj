@@ -35,6 +35,14 @@
 			isa = PBXBuildFile;
 			fileRef = 9606990ECBF84402B9E96180 /* Notifications.swift */;
 		};
+		AA11BB22CC33DD44EE550001 /* OldOSKit.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = AA11BB22CC33DD44EE550101 /* OldOSKit.swift */;
+		};
+		AA11BB22CC33DD44EE550002 /* SafariControls.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = AA11BB22CC33DD44EE550102 /* SafariControls.swift */;
+		};
 		202495A08BC940B3873F5C1E /* OldSafariPalette.swift in Sources */ = {
 			isa = PBXBuildFile;
 			fileRef = 709807C2D70E44E4B17BC5B0 /* OldSafariPalette.swift */;
@@ -146,6 +154,20 @@
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = Notifications.swift;
+			sourceTree = "<group>";
+		};
+
+		AA11BB22CC33DD44EE550101 /* OldOSKit.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = OldOSKit.swift;
+			sourceTree = "<group>";
+		};
+
+		AA11BB22CC33DD44EE550102 /* SafariControls.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariControls.swift;
 			sourceTree = "<group>";
 		};
 
@@ -312,6 +334,7 @@
 			children = (
 				9606990ECBF84402B9E96180 /* Notifications.swift */,
 				709807C2D70E44E4B17BC5B0 /* OldSafariPalette.swift */,
+				AA11BB22CC33DD44EE550101 /* OldOSKit.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -331,6 +354,7 @@
 				997C16FA280E4D31B3076B59 /* ShareSheet.swift */,
 				2A3B4C5D6E7F8091A2B3C4D5 /* SafariSearchRow.swift */,
 				4C5D6E7F8091A2B3C4D5E6F7 /* SafariGoogleSearchBar.swift */,
+				AA11BB22CC33DD44EE550102 /* SafariControls.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -417,6 +441,8 @@
 				54FD8A77A3E647768CBD4B93 /* ShareSheet.swift in Sources */,
 				1A2B3C4D5E6F708192A3B4C5 /* SafariSearchRow.swift in Sources */,
 				3B4C5D6E7F8091A2B3C4D5E6 /* SafariGoogleSearchBar.swift in Sources */,
+				AA11BB22CC33DD44EE550001 /* OldOSKit.swift in Sources */,
+				AA11BB22CC33DD44EE550002 /* SafariControls.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
