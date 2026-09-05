@@ -75,11 +75,15 @@ struct SafariWebView: UIViewRepresentable {
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            // OldOS Safari did not expose a separate popup window. Keep
-            // target=_blank/window.open navigation inside the current page.
+            // target="_blank" / window.open: hand the link to a new page when
+            // the browser chrome offers one, otherwise keep it in this page.
             if navigationAction.targetFrame == nil,
                let url = navigationAction.request.url {
-                webView.load(URLRequest(url: url))
+                if let onOpenInNewTab {
+                    onOpenInNewTab(url)
+                } else {
+                    webView.load(URLRequest(url: url))
+                }
             }
             return nil
         }
@@ -126,24 +130,6 @@ struct SafariWebView: UIViewRepresentable {
             withError error: Error
         ) {
             webView.scrollView.refreshControl?.endRefreshing()
-        }
-
-        // MARK: target="_blank" and window.open
-
-        func webView(
-            _ webView: WKWebView,
-            createWebViewWith configuration: WKWebViewConfiguration,
-            for navigationAction: WKNavigationAction,
-            windowFeatures: WKWindowFeatures
-        ) -> WKWebView? {
-            guard let url = navigationAction.request.url else { return nil }
-
-            if let onOpenInNewTab {
-                onOpenInNewTab(url)
-            } else {
-                webView.load(navigationAction.request)
-            }
-            return nil
         }
 
         // MARK: JavaScript panels
