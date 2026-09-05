@@ -11,6 +11,9 @@ struct SafariRootView: View {
         GeometryReader { geometry in
             if let tab = store.selected {
                 ZStack(alignment: .top) {
+                    // Web content is edge-to-edge. The classic Safari chrome
+                    // floats above it, while safe-area insets are consumed only
+                    // by the chrome so the home indicator never covers controls.
                     pageContent(for: tab)
                         .ignoresSafeArea()
 
@@ -67,11 +70,8 @@ struct SafariRootView: View {
     private func chrome(for tab: SafariTab, topInset: CGFloat) -> some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: topInset)
-            SafariAddressBar(tab: tab, isPrivate: tab.isPrivate)
-            SafariProgressBar(
-                progress: tab.estimatedProgress,
-                isLoading: tab.isLoading
-            )
+            SafariSearchRow(tab: tab, isPrivate: tab.isPrivate)
+            SafariProgressBar(progress: tab.estimatedProgress, isLoading: tab.isLoading)
         }
         .background(
             chromeGradient(isPrivate: tab.isPrivate)
