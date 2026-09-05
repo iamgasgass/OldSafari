@@ -27,7 +27,7 @@ struct SafariLibraryView: View {
                                     withAnimation(.easeOut(duration: 0.12)) { editing.toggle() }
                                 }
                             } else if section == 1 && !store.history.isEmpty {
-                                SafariLegacyTextButton(title: "Clear", compact: true, destructive: true) {
+                                SafariLegacyTextButton(title: "Clear", destructive: true, compact: true) {
                                     showClearHistory = true
                                 }
                             } else {
@@ -244,7 +244,7 @@ private struct SafariLegacyConfirmationOverlay: View {
                     .padding(.bottom, 14)
                 HStack(spacing: 0) {
                     SafariLegacyTextButton(title: "Cancel", compact: true, action: onCancel)
-                    SafariLegacyTextButton(title: destructiveTitle, compact: true, destructive: true, action: onConfirm)
+                    SafariLegacyTextButton(title: destructiveTitle, destructive: true, compact: true, action: onConfirm)
                 }
                 .padding(8)
             }
