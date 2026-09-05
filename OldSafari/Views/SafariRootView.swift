@@ -17,6 +17,7 @@ struct SafariRootView: View {
 
                     VStack(spacing: 0) {
                         chrome(for: tab, topInset: geometry.safeAreaInsets.top)
+                            .id("chrome-\(tab.id.uuidString)")
                         Spacer(minLength: 0)
                         SafariToolbar(
                             tab: tab,

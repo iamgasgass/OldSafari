@@ -22,8 +22,9 @@ struct SafariActionsView: View {
     @State private var showBookmarkEditor = false
     @State private var bookmarkTitle = ""
     @State private var showMailShare = false
+    @State private var targetTabID: UUID?
 
-    private var currentTab: SafariTab? { store.selected }
+    private var currentTab: SafariTab? { store.tab(for: targetTabID) ?? store.selected }
 
     private var bookmarkExists: Bool {
         guard let url = currentTab?.url?.absoluteString else { return false }
@@ -124,6 +125,7 @@ struct SafariActionsView: View {
                 }
             }
         }
+        .onAppear { targetTabID = store.selectedID }
         .sheet(isPresented: $showSystemShare) {
             if let url = currentTab?.url {
                 ShareSheet(items: [url])

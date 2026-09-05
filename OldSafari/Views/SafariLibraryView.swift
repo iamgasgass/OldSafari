@@ -11,6 +11,7 @@ struct SafariLibraryView: View {
     @State private var section = 0
     @State private var editing = false
     @State private var showClearHistory = false
+    @State private var targetTabID: UUID?
 
     var body: some View {
         GeometryReader { geometry in
@@ -97,7 +98,8 @@ struct SafariLibraryView: View {
                             }
 
                             Button {
-                                guard let url = URL(string: bookmark.url), let currentTab = store.selected else { return }
+                                guard let url = URL(string: bookmark.url), let currentTab = store.tab(for: targetTabID) ?? store.selected else { return }
+                                store.select(currentTab)
                                 currentTab.load(url)
                                 onClose()
                             } label: {
@@ -154,7 +156,8 @@ struct SafariLibraryView: View {
 
                         ForEach(group.entries) { entry in
                             Button {
-                                guard let url = URL(string: entry.url), let currentTab = store.selected else { return }
+                                guard let url = URL(string: entry.url), let currentTab = store.tab(for: targetTabID) ?? store.selected else { return }
+                                store.select(currentTab)
                                 currentTab.load(url)
                                 onClose()
                             } label: {

@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct SafariAddressBar: View {
     @ObservedObject var tab: SafariTab
@@ -19,7 +20,7 @@ struct SafariAddressBar: View {
 
             TextField("Address", text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15, weight: .regular, design: .default))
+                .font(.system(size: 15, weight: .regular))
                 .foregroundColor(fieldTextColor)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
@@ -28,30 +29,23 @@ struct SafariAddressBar: View {
                 .submitLabel(.go)
                 .multilineTextAlignment(focused ? .leading : .center)
                 .onSubmit { navigate() }
-                .onAppear { syncFromWebView() }
-                .onChange(of: focusedField.wrappedValue) { newValue in
-                    if newValue != .address { syncFromWebView() }
+                .onAppear { syncFromWebView(force: true) }
+                .onReceive(tab.$url.receive(on: DispatchQueue.main)) { _ in
+                    if !focused { syncFromWebView(force: true) }
                 }
-                .onChange(of: tab.id) { _ in syncFromWebView() }
-                .onChange(of: tab.url) { _ in
-                    if !focused { syncFromWebView() }
+                .onChange(of: focusedField.wrappedValue) { newValue in
+                    if newValue != .address { syncFromWebView(force: true) }
                 }
 
             if focused && !text.isEmpty {
-                Button {
-                    text = ""
-                } label: {
+                Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             } else if !focused {
                 Button {
-                    if tab.isLoading {
-                        tab.stop()
-                    } else {
-                        tab.reload()
-                    }
+                    if tab.isLoading { tab.stop() } else { tab.reload() }
                 } label: {
                     if tab.isLoading {
                         Image(systemName: "xmark")
@@ -67,17 +61,10 @@ struct SafariAddressBar: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    Button {
-                        tab.toggleDesktopSite()
-                    } label: {
-                        Label(
-                            tab.isRequestingDesktopSite ? "Request Mobile Website" : "Request Desktop Website",
-                            systemImage: "display"
-                        )
+                    Button { tab.toggleDesktopSite() } label: {
+                        Label(tab.isRequestingDesktopSite ? "Request Mobile Website" : "Request Desktop Website", systemImage: "display")
                     }
-                    Button {
-                        tab.findOnPage()
-                    } label: {
+                    Button { tab.findOnPage() } label: {
                         Label("Find on Page", systemImage: "magnifyingglass")
                     }
                 }
@@ -87,64 +74,39 @@ struct SafariAddressBar: View {
         .padding(.vertical, 6)
         .background(fieldBackground)
         .clipShape(RoundedRectangle(cornerRadius: 7))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7)
-                .stroke(isPrivate ? OldSafariPalette.fieldBorderPrivate : OldSafariPalette.fieldBorder, lineWidth: 0.8)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(isPrivate ? OldSafariPalette.fieldBorderPrivate : OldSafariPalette.fieldBorder, lineWidth: 0.8))
+        .id("address-\(tab.id.uuidString)")
     }
 
     private var fieldBackground: LinearGradient {
-        LinearGradient(
-            colors: isPrivate
-                ? [OldSafariPalette.fieldTopPrivate, OldSafariPalette.fieldBottomPrivate]
-                : [OldSafariPalette.fieldTop, OldSafariPalette.fieldBottom],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        LinearGradient(colors: isPrivate ? [OldSafariPalette.fieldTopPrivate, OldSafariPalette.fieldBottomPrivate] : [OldSafariPalette.fieldTop, OldSafariPalette.fieldBottom], startPoint: .top, endPoint: .bottom)
     }
 
     private var fieldTextColor: Color {
-        if focused {
-            return isPrivate ? .white : .black
-        }
-        return isPrivate ? .white.opacity(0.85) : OldSafariPalette.placeholderText
+        focused ? (isPrivate ? .white : .black) : (isPrivate ? .white.opacity(0.85) : OldSafariPalette.placeholderText)
     }
 
-    private func syncFromWebView() {
+    private func syncFromWebView(force: Bool = false) {
+        guard force || !focused else { return }
         text = tab.url?.absoluteString ?? ""
     }
 
     private func navigate() {
         let input = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !input.isEmpty else {
-            focusedField.wrappedValue = nil
-            return
-        }
+        guard !input.isEmpty else { focusedField.wrappedValue = nil; return }
 
-        // Direct URL with an explicit scheme.
         if let url = URL(string: input), let scheme = url.scheme, !scheme.isEmpty {
             tab.load(url)
-            focusedField.wrappedValue = nil
-            return
-        }
-
-        // Looks like a bare domain ("example.com").
-        if looksLikeDomain(input), let url = URL(string: "https://\(input)") {
+        } else if looksLikeDomain(input), let url = URL(string: "https://\(input)") {
             tab.load(url)
-            focusedField.wrappedValue = nil
-            return
-        }
-
-        // Fallback to a web search.
-        let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let searchURL = URL(string: "https://www.google.com/search?q=\(encoded)") {
-            tab.load(searchURL)
+        } else {
+            let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            if let searchURL = URL(string: "https://www.google.com/search?q=\(encoded)") { tab.load(searchURL) }
         }
         focusedField.wrappedValue = nil
     }
 
     private func looksLikeDomain(_ input: String) -> Bool {
-        guard !input.contains(" ") else { return false }
-        return input.contains(".") && !input.hasPrefix(".")
+        !input.contains(" ") && input.contains(".") && !input.hasPrefix(".")
     }
 }

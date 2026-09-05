@@ -256,7 +256,7 @@ struct SafariTabsView: View {
                                     isSelected: tab.id == store.selectedID,
                                     onSelect: {
                                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                        store.select(tab)
+                                        store.select(id: tab.id)
                                         onClose()
                                     },
                                     onClose: {
