@@ -84,6 +84,39 @@ jobs:
             -project "$PROJECT" \
             -list
 
+      - name: Prune stray app icon files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Older revisions of the repo left AppIcon.png / AppIcon-60@*.png in
+          # the icon set without an entry in Contents.json, which actool
+          # reports as "unassigned children".  Only the files declared in
+          # Contents.json are kept for this build.
+          SET_DIR="OldSafari/Assets.xcassets/AppIcon.appiconset"
+
+          if [ -d "$SET_DIR" ]; then
+            python3 - "$SET_DIR" <<'PYEOF'
+          import json, os, sys
+
+          set_dir = sys.argv[1]
+          with open(os.path.join(set_dir, "Contents.json")) as handle:
+              contents = json.load(handle)
+
+          keep = {"Contents.json"}
+          for image in contents.get("images", []):
+              if image.get("filename"):
+                  keep.add(image["filename"])
+
+          for name in sorted(os.listdir(set_dir)):
+              if name not in keep:
+                  os.remove(os.path.join(set_dir, name))
+                  print("rimosso:", name)
+
+          print("mantenuti:", sorted(keep))
+          PYEOF
+          fi
+
       - name: Build OldSafari
         shell: bash
         run: |
