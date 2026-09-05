@@ -36,6 +36,9 @@ final class SafariTabStore: ObservableObject {
 
     @discardableResult
     func addTab(url: URL? = nil) -> SafariTab {
+        if visibleTabs.count >= 8 {
+            return selected ?? tabs.first!
+        }
         let tab = SafariTab(url: url, isPrivate: isPrivateMode)
         attachCallbacks(to: tab)
         tabs.append(tab)
@@ -65,7 +68,7 @@ final class SafariTabStore: ObservableObject {
             // Select the page adjacent to the closed one. Prefer the previous
             // page, falling back to the last remaining page.
             let remaining = tabs.filter { $0.isPrivate == tab.isPrivate }
-            if let oldIndex = visibleBefore.firstIndex(of: tab) {
+            if let oldIndex = visibleBefore.firstIndex(where: { $0.id == tab.id }) {
                 let replacementIndex = max(0, min(oldIndex - 1, remaining.count - 1))
                 selectedID = remaining[replacementIndex].id
             } else {
