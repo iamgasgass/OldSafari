@@ -12,6 +12,7 @@ class SafariState: ObservableObject {
     
     @Published var isPrivateMode: Bool = false
     @Published var isFullScreen: Bool = false
+    @Published var activeTabCount: Int = 1
     
     @Published var showBookmarks: Bool = false
     @Published var showShareSheet: Bool = false
@@ -19,7 +20,8 @@ class SafariState: ObservableObject {
     @Published var history: [URL] = []
     @Published var bookmarks: [URL] = [
         URL(string: "https://www.apple.com")!,
-        URL(string: "https://www.google.com")!
+        URL(string: "https://www.google.com")!,
+        URL(string: "http://github.com/iamgasgass/OldSafari")!
     ]
     
     var webView: WKWebView?

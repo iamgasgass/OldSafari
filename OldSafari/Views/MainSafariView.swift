@@ -7,15 +7,19 @@ struct MainSafariView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
+                // Top Skeuomorphic Header Bar
                 iOS6AddressBar(state: state)
                 
+                // Fullscreen Native WebKit Engine
                 WebViewWrapper(state: state)
                     .edgesIgnoringSafeArea(.horizontal)
                 
+                // Bottom Skeuomorphic Toolbar
                 iOS6Toolbar(state: state)
             }
             .background(state.isPrivateMode ? Color.black : Color.white)
             
+            // Skeuomorphic Share Action Sheet Overlay
             if state.showShareSheet {
                 iOS6ShareSheet(state: state)
             }
@@ -60,6 +64,9 @@ struct WebViewWrapper: UIViewRepresentable {
                     self.parent.state.isLoading = webView.isLoading
                     self.parent.state.canGoBack = webView.canGoBack
                     self.parent.state.canGoForward = webView.canGoForward
+                    if let title = webView.title, !title.isEmpty {
+                        self.parent.state.pageTitle = title
+                    }
                     if let urlString = webView.url?.absoluteString {
                         self.parent.state.currentURLString = urlString
                         if !self.parent.state.history.contains(where: { $0.absoluteString == urlString }), let url = webView.url {

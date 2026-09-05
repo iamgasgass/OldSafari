@@ -6,10 +6,19 @@ struct iOS6ButtonStyle: ButtonStyle {
     
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .font(.system(size: 17, weight: .bold))
             .foregroundColor(
-                isActive ? .blue : (isPrivate ? Color.white : Color(red: 0.2, green: 0.25, blue: 0.3))
+                isActive
+                ? Color(red: 0.2, green: 0.55, blue: 0.95)
+                : (isPrivate ? Color.white.opacity(0.9) : Color(red: 0.22, green: 0.27, blue: 0.33))
             )
-            .shadow(color: isPrivate ? .black : .white.opacity(0.8), x: 0, y: 1)
-            .opacity(configuration.isPressed ? 0.5 : 1.0)
+            .shadow(
+                color: isPrivate ? Color.black.opacity(0.9) : Color.white.opacity(0.7),
+                radius: 0,
+                x: 0,
+                y: configuration.isPressed ? 0 : 1
+            )
+            .opacity(configuration.isPressed ? 0.4 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
     }
 }

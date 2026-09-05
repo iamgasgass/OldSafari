@@ -3,10 +3,11 @@ import SwiftUI
 struct iOS6BookmarksView: View {
     @ObservedObject var state: SafariState
     @Environment(\.dismiss) var dismiss
-    @State private var selectedTab = 0
+    @State private var selectedTab = 0 // 0 = Bookmarks, 1 = History
     
     var body: some View {
         VStack(spacing: 0) {
+            // iOS 6 Header Bar with Done Button
             ZStack {
                 LinearGradient(
                     gradient: state.isPrivateMode ? iOS6Theme.privateTopBarGradient : iOS6Theme.topBarGradient,
@@ -16,37 +17,51 @@ struct iOS6BookmarksView: View {
                 
                 HStack {
                     Spacer()
-                    Text(selectedTab == 0 ? "Segnalibri" : "Cronologia")
+                    Text(selectedTab == 0 ? "Bookmarks" : "History")
                         .font(.system(size: 17, weight: .bold))
                         .foregroundColor(state.isPrivateMode ? .white : .black)
                         .shadow(color: state.isPrivateMode ? .black : .white.opacity(0.5), radius: 0, x: 0, y: 1)
                     Spacer()
                     
-                    Button("Fine") {
+                    Button("Done") {
                         dismiss()
                     }
-                    .font(.system(size: 13, weight: .bold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(LinearGradient(gradient: iOS6Theme.topBarGradient, startPoint: .top, endPoint: .bottom))
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.black.opacity(0.5), lineWidth: 1))
+                        ZStack {
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: Color(red: 0.45, green: 0.55, blue: 0.70), location: 0.0),
+                                    .init(color: Color(red: 0.25, green: 0.35, blue: 0.50), location: 0.5),
+                                    .init(color: Color(red: 0.15, green: 0.25, blue: 0.40), location: 0.51),
+                                    .init(color: Color(red: 0.20, green: 0.30, blue: 0.45), location: 1.0)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.black.opacity(0.6), lineWidth: 1)
+                        }
                     )
-                    .foregroundColor(.black)
+                    .cornerRadius(4)
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 8)
             }
             .frame(height: 44)
             
+            // Retro Segmented Control
             Picker("", selection: $selectedTab) {
-                Text("Segnalibri").tag(0)
-                Text("Cronologia").tag(1)
+                Text("Bookmarks").tag(0)
+                Text("History").tag(1)
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(8)
-            .background(state.isPrivateMode ? Color(white: 0.15) : Color(white: 0.85))
+            .background(state.isPrivateMode ? Color(white: 0.12) : Color(white: 0.85))
             
+            // Linen Texture Table List
             List {
                 if selectedTab == 0 {
                     ForEach(state.bookmarks, id: \.self) { url in
@@ -55,11 +70,11 @@ struct iOS6BookmarksView: View {
                             state.webView?.load(URLRequest(url: url))
                             dismiss()
                         }) {
-                            HStack {
+                            HStack(spacing: 12) {
                                 Image(systemName: "book.fill")
                                     .foregroundColor(.blue)
                                 Text(url.absoluteString)
-                                    .font(.system(size: 14))
+                                    .font(.system(size: 14, weight: .medium))
                                     .lineLimit(1)
                                     .foregroundColor(state.isPrivateMode ? .white : .black)
                             }
@@ -73,11 +88,11 @@ struct iOS6BookmarksView: View {
                             state.webView?.load(URLRequest(url: url))
                             dismiss()
                         }) {
-                            HStack {
+                            HStack(spacing: 12) {
                                 Image(systemName: "clock")
                                     .foregroundColor(.gray)
                                 Text(url.absoluteString)
-                                    .font(.system(size: 14))
+                                    .font(.system(size: 14, weight: .medium))
                                     .lineLimit(1)
                                     .foregroundColor(state.isPrivateMode ? .white : .black)
                             }
@@ -87,7 +102,7 @@ struct iOS6BookmarksView: View {
                 }
             }
             .listStyle(PlainListStyle())
-            .background(state.isPrivateMode ? Color.black : Color(white: 0.9))
+            .background(state.isPrivateMode ? Color.black : Color(white: 0.92))
         }
     }
 }
