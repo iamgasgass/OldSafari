@@ -70,7 +70,6 @@ public class SafariDataManager: ObservableObject {
     public func addHistory(title: String, url: String) {
         guard !url.isEmpty && url != "about:blank" else { return }
         let newH = HistoryItem(title: title.isEmpty ? url : title, url: url)
-        // Avoid immediate duplicates
         if let first = history.first, first.url == url {
             return
         }

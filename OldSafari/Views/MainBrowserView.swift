@@ -140,7 +140,6 @@ public struct MainBrowserView: View {
         if formatted.isEmpty { return }
         
         if !formatted.contains(".") && !formatted.hasPrefix("http") {
-            // Treat as Google Search
             if let query = formatted.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
                 formatted = "https://www.google.com/search?q=\(query)"
             }

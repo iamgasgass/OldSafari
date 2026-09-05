@@ -29,7 +29,7 @@ public struct AddressBarView: View {
                             .fill(iOS6Theme.progressGradient)
                             .frame(width: max(10, geo.size.width * CGFloat(progress)))
                         
-                        // Glass glossy sheen line across the top half of progress bar
+                        // Glass glossy sheen line across top half of progress bar
                         VStack {
                             Rectangle()
                                 .fill(Color.white.opacity(0.35))

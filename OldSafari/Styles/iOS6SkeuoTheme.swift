@@ -1,8 +1,8 @@
 import SwiftUI
 
-// MARK: - iOS 6 Colors & Gradients
+// MARK: - iOS 6 Colors, Gradients & Skeuomorphic Themes
 public struct iOS6Theme {
-    // Normal Mode Navigation Bar Gradient
+    // Standard Navigation Bar Gradient (iOS 6 Metallic Light Grey)
     public static let navBarGradientNormal = LinearGradient(
         gradient: Gradient(stops: [
             .init(color: Color(red: 0.82, green: 0.85, blue: 0.88), location: 0.0),
@@ -14,7 +14,7 @@ public struct iOS6Theme {
         endPoint: .bottom
     )
     
-    // Private Browsing Mode Navigation Bar Gradient (Dark Metallic / Charcoal)
+    // Private Browsing Navigation Bar Gradient (Dark Metallic Charcoal)
     public static let navBarGradientPrivate = LinearGradient(
         gradient: Gradient(stops: [
             .init(color: Color(red: 0.28, green: 0.30, blue: 0.34), location: 0.0),
@@ -50,7 +50,7 @@ public struct iOS6Theme {
         endPoint: .bottom
     )
 
-    // iOS 6 Progress Fill Gradient (Glossy Blue)
+    // iOS 6 URL Bar Loading Progress Fill Gradient (Glossy Blue Sheen)
     public static let progressGradient = LinearGradient(
         gradient: Gradient(stops: [
             .init(color: Color(red: 0.78, green: 0.87, blue: 0.98), location: 0.0),
@@ -62,10 +62,10 @@ public struct iOS6Theme {
         endPoint: .bottom
     )
     
-    // Action Sheet Gradient iOS 6
+    // Action Sheet Dark Background Gradient
     public static let actionSheetBackground = LinearGradient(
         gradient: Gradient(colors: [
-            Color(red: 0.18, green: 0.20, blue: 0.24).opacity(0.95),
+            Color(red: 0.18, green: 0.20, blue: 0.24).opacity(0.96),
             Color(red: 0.08, green: 0.09, blue: 0.12).opacity(0.98)
         ]),
         startPoint: .top,
@@ -73,7 +73,7 @@ public struct iOS6Theme {
     )
 }
 
-// MARK: - iOS 6 Custom Button Shapes & Styles
+// MARK: - Custom iOS 6 Navigation Shapes & Button Styles
 public struct iOS6NavBackButtonShape: Shape {
     public func path(in rect: CGRect) -> Path {
         var path = Path()
