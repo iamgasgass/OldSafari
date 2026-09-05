@@ -127,7 +127,9 @@ private struct SafariSelectedTabView: View {
         VStack(spacing: 0) {
             Color.clear.frame(height: topInset)
             SafariSearchRow(tab: tab, isPrivate: tab.isPrivate)
-            SafariProgressBar(progress: tab.estimatedProgress, isLoading: tab.isLoading)
+            // Progress is rendered inside SafariAddressBar, matching the
+            // original Safari/OldOS loading treatment rather than occupying
+            // an extra row below the address/search controls.
         }
         .background(
             LinearGradient(

@@ -7,11 +7,49 @@ struct SafariAddressBar: View {
     var focusedField: FocusState<SafariSearchField?>.Binding
 
     @State private var text = ""
+    @State private var shimmer = false
 
     private var focused: Bool { focusedField.wrappedValue == .address }
 
     var body: some View {
-        HStack(spacing: 6) {
+        ZStack(alignment: .leading) {
+            // iOS 6/OldOS-style in-field loading: the progress color fills
+            // the address field itself instead of appearing as a separate bar.
+            if tab.isLoading {
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.16, green: 0.48, blue: 0.96),
+                                    Color(red: 0.34, green: 0.74, blue: 1.00),
+                                    Color(red: 0.10, green: 0.39, blue: 0.90)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: max(0, geometry.size.width * CGFloat(min(max(tab.estimatedProgress, 0), 1))))
+                        .animation(.easeInOut(duration: 0.18), value: tab.estimatedProgress)
+                        .overlay(alignment: .leading) {
+                            Rectangle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.clear, .white.opacity(0.72), .clear],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .frame(width: max(24, geometry.size.width * 0.16))
+                                .offset(x: shimmer ? geometry.size.width : -geometry.size.width * 0.18)
+                                .animation(.linear(duration: 0.8).repeatForever(autoreverses: false), value: shimmer)
+                        }
+                        .clipShape(Rectangle())
+                }
+                .allowsHitTesting(false)
+            }
+
+            HStack(spacing: 6) {
             if !focused, tab.isSecure {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 11, weight: .semibold))
@@ -29,9 +67,15 @@ struct SafariAddressBar: View {
                 .submitLabel(.go)
                 .multilineTextAlignment(focused ? .leading : .center)
                 .onSubmit { navigate() }
-                .onAppear { syncFromWebView(force: true) }
-                .onReceive(tab.$url.receive(on: DispatchQueue.main)) { _ in
+                .onAppear {
+                    syncFromWebView(force: true)
+                    updateShimmer(tab.isLoading)
+                }
+                .onReceive(tab.$url) { _ in
                     if !focused { syncFromWebView(force: true) }
+                }
+                .onReceive(tab.$isLoading) { loading in
+                    updateShimmer(loading)
                 }
                 .onChange(of: focusedField.wrappedValue) { newValue in
                     if newValue != .address { syncFromWebView(force: true) }
@@ -69,6 +113,7 @@ struct SafariAddressBar: View {
                     }
                 }
             }
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -76,6 +121,15 @@ struct SafariAddressBar: View {
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(isPrivate ? OldSafariPalette.fieldBorderPrivate : OldSafariPalette.fieldBorder, lineWidth: 0.8))
         .id("address-\(tab.id.uuidString)")
+    }
+
+    private func updateShimmer(_ loading: Bool) {
+        if loading {
+            shimmer = false
+            DispatchQueue.main.async { shimmer = true }
+        } else {
+            shimmer = false
+        }
     }
 
     private var fieldBackground: LinearGradient {
