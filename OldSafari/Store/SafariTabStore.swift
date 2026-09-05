@@ -22,12 +22,18 @@ final class SafariTabStore: ObservableObject {
     /// visible tab set. This is the important part of the Pages -> Library ->
     /// ShareSheet fix: overlays never cache a WKWebView or a stale array index.
     var selected: SafariTab? {
-        if let selectedID,
-           let match = tabs.first(where: { $0.id == selectedID }),
-           match.isPrivate == isPrivateMode {
-            return match
-        }
-        return visibleTabs.first
+        guard let selectedID else { return visibleTabs.first }
+        return tabs.first(where: { $0.id == selectedID && $0.isPrivate == isPrivateMode }) ?? visibleTabs.first
+    }
+
+    func tab(for id: UUID?) -> SafariTab? {
+        guard let id else { return nil }
+        return tabs.first(where: { $0.id == id })
+    }
+
+    func select(id: UUID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        select(tab)
     }
 
     init() {
