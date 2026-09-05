@@ -1,8 +1,9 @@
 import SwiftUI
+import UIKit
 
-/// Full-screen Safari shell. The selected tab is observed by a dedicated
-/// child view so WKWebView/KVO changes (URL, progress, loading, title) update
-/// the chrome immediately without requiring a trip through Pages.
+/// Full-screen Safari shell.  The chrome geometry is OldOS' (60pt title bar,
+/// 45pt toolbar) but it is laid out against the real device safe areas so the
+/// browser stays edge to edge instead of being letterboxed into a 320x480 frame.
 struct SafariRootView: View {
     @StateObject private var store = SafariTabStore()
 
@@ -13,36 +14,38 @@ struct SafariRootView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
+                theme.appBackground.ignoresSafeArea()
+
                 if let tab = store.selected {
                     SafariSelectedTabView(
                         store: store,
                         tab: tab,
+                        theme: theme,
                         topInset: geometry.safeAreaInsets.top,
                         bottomInset: geometry.safeAreaInsets.bottom,
                         showTabs: $showTabs,
                         showLibrary: $showLibrary,
                         showShare: $showShare
                     )
-                } else {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black)
         }
+        .ignoresSafeArea()
+        .statusBarHidden(false)
+        .preferredColorScheme(store.isPrivateMode ? .dark : .light)
+    }
+
+    private var theme: OldOSSafariTheme {
+        OldOSSafariTheme.theme(isPrivate: store.isPrivateMode)
     }
 }
 
-/// Important: this view owns the observation of the selected SafariTab.
-/// SafariRootView observes the store for selection changes; this child observes
-/// the tab itself for URL/title/loading/progress changes. That closes the gap
-/// where a newly loaded URL could leave the old start page visible until Pages
-/// was opened and the tab was selected again.
 private struct SafariSelectedTabView: View {
     @ObservedObject var store: SafariTabStore
     @ObservedObject var tab: SafariTab
 
+    let theme: OldOSSafariTheme
     let topInset: CGFloat
     let bottomInset: CGFloat
 
@@ -50,96 +53,166 @@ private struct SafariSelectedTabView: View {
     @Binding var showLibrary: Bool
     @Binding var showShare: Bool
 
+    @State private var editingField: SafariSearchField?
+    @State private var urlText: String = ""
+    @State private var googleText: String = ""
+
     var body: some View {
         ZStack {
-            VStack(spacing: 0) {
-                chrome
-                    .id("chrome-\(tab.id.uuidString)")
-                    .zIndex(2)
-
-                // Keep the WKWebView in the actual content slot. It is never
-                // positioned underneath the top chrome, while remaining
-                // completely fullscreen relative to the device window.
-                pageContent
-                    .id("page-\(tab.id.uuidString)-\(tab.url?.absoluteString ?? "blank")")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .background(tab.isPrivate ? Color.black : Color.white)
-                    .zIndex(1)
-
-                SafariToolbar(
-                    tab: tab,
-                    isPrivate: tab.isPrivate,
-                    tabCount: store.visibleTabs.count,
-                    bottomInset: bottomInset,
-                    onTabs: { withAnimation(.easeOut(duration: 0.18)) { showTabs = true } },
-                    onLibrary: { withAnimation(.easeOut(duration: 0.18)) { showLibrary = true } },
-                    onShare: { withAnimation(.easeOut(duration: 0.18)) { showShare = true } }
-                )
-                .zIndex(2)
-            }
-            .ignoresSafeArea()
-            .preferredColorScheme(tab.isPrivate ? .dark : .light)
-
             if showTabs {
-                SafariTabsView(store: store) {
-                    withAnimation(.easeOut(duration: 0.18)) { showTabs = false }
-                }
+                SafariTabsView(
+                    store: store,
+                    theme: theme,
+                    topInset: topInset,
+                    bottomInset: bottomInset,
+                    onClose: {
+                        withAnimation(.linear(duration: 0.25)) { showTabs = false }
+                    }
+                )
                 .transition(.opacity)
-                .zIndex(20)
+                .zIndex(10)
+            } else {
+                browser
+                    .zIndex(1)
             }
 
             if showLibrary {
-                SafariLibraryView(store: store) {
-                    withAnimation(.easeOut(duration: 0.18)) { showLibrary = false }
-                }
+                SafariLibraryView(
+                    store: store,
+                    theme: theme,
+                    topInset: topInset,
+                    bottomInset: bottomInset,
+                    onClose: {
+                        withAnimation(.linear(duration: 0.25)) { showLibrary = false }
+                    }
+                )
                 .transition(.move(edge: .bottom))
-                .zIndex(21)
+                .zIndex(20)
             }
 
             if showShare {
-                SafariActionsView(store: store) {
-                    withAnimation(.easeOut(duration: 0.18)) { showShare = false }
-                }
+                SafariActionsView(
+                    store: store,
+                    tab: tab,
+                    theme: theme,
+                    topInset: topInset,
+                    bottomInset: bottomInset,
+                    onClose: {
+                        withAnimation(.linear(duration: 0.25)) { showShare = false }
+                    }
+                )
                 .transition(.move(edge: .bottom))
-                .zIndex(22)
+                .zIndex(30)
             }
         }
-        .animation(.easeOut(duration: 0.18), value: showTabs)
-        .animation(.easeOut(duration: 0.18), value: showLibrary)
-        .animation(.easeOut(duration: 0.18), value: showShare)
+        .onAppear { syncURLText() }
+        .onChange(of: tab.id) { _ in
+            editingField = nil
+            syncURLText()
+        }
+        .onReceive(tab.$url) { _ in
+            if editingField == nil { syncURLText() }
+        }
     }
 
-    @ViewBuilder
-    private var pageContent: some View {
-        // Always mount SafariWebView. This is the key dynamic-load fix: a new
-        // tab can start blank and then receive a URL without replacing the
-        // browser surface with a separate stale SwiftUI start-page instance.
-        if tab.url == nil {
-            SafariStartPageView(store: store, tab: tab)
+    // MARK: Browser
+
+    private var browser: some View {
+        VStack(spacing: 0) {
+            chrome.zIndex(2)
+
+            ZStack {
+                theme.pageBackground
+
+                if tab.url == nil {
+                    SafariStartPageView(store: store, tab: tab, theme: theme)
+                } else {
+                    SafariWebView(tab: tab)
+                }
+
+                if editingField != nil {
+                    theme.scrim
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.linear(duration: 0.22)) { editingField = nil }
+                            oldOSHideKeyboard()
+                            syncURLText()
+                        }
+                        .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .zIndex(1)
+
+            SafariToolbar(
+                theme: theme,
+                canGoBack: tab.canGoBack,
+                canGoForward: tab.canGoForward,
+                mode: .browsing,
+                tabCount: store.visibleTabs.count,
+                isPrivate: store.isPrivateMode,
+                bottomInset: bottomInset,
+                onBack: { tab.goBack() },
+                onForward: { tab.goForward() },
+                onShare: { withAnimation(.linear(duration: 0.25)) { showShare = true } },
+                onBookmarks: { withAnimation(.linear(duration: 0.25)) { showLibrary = true } },
+                onTabs: { withAnimation(.linear(duration: 0.25)) { showTabs = true } }
+            )
+            .zIndex(2)
         }
-        SafariWebView(tab: tab)
-            .opacity(tab.url == nil ? 0 : 1)
-            .allowsHitTesting(tab.url != nil)
     }
 
     private var chrome: some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: topInset)
-            SafariSearchRow(tab: tab, isPrivate: tab.isPrivate)
-            // Progress is rendered inside SafariAddressBar, matching the
-            // original Safari/OldOS loading treatment rather than occupying
-            // an extra row below the address/search controls.
+
+            SafariSearchRow(
+                tab: tab,
+                theme: theme,
+                editingField: $editingField,
+                urlText: $urlText,
+                googleText: $googleText,
+                onNavigate: navigate,
+                onSearch: search
+            )
         }
         .background(
-            LinearGradient(
-                colors: tab.isPrivate
-                    ? [OldSafariPalette.chromeTopPrivate, OldSafariPalette.chromeBottomPrivate]
-                    : [OldSafariPalette.chromeTop, OldSafariPalette.chromeBottom],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .top)
+            LinearGradient(oldOS: theme.barGradient)
+                .ignoresSafeArea(edges: .top)
         )
+    }
+
+    // MARK: Actions
+
+    private func syncURLText() {
+        urlText = tab.url?.absoluteString ?? ""
+    }
+
+    /// OldOS URL heuristics: honour an explicit scheme, promote `www.` and
+    /// otherwise assume https.  Anything that clearly is not a host is handed
+    /// to Google, the way iOS 6's unified behaviour ended up working.
+    private func navigate(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            if let url = URL(string: trimmed) { tab.load(url) }
+        } else if trimmed.contains(" ") || !trimmed.contains(".") {
+            search(trimmed)
+        } else if let url = URL(string: "https://\(trimmed)") {
+            tab.load(url)
+        }
+        editingField = nil
+    }
+
+    private func search(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
+        if let url = URL(string: "https://google.com/search?q=\(encoded)") {
+            tab.load(url)
+        }
+        editingField = nil
     }
 }

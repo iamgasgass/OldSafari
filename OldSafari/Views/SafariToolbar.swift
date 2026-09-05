@@ -1,85 +1,131 @@
 import SwiftUI
 import UIKit
 
+enum SafariToolbarMode {
+    case browsing
+    case tabs
+    case bookmarks
+    /// Free-form pair of rectangle buttons, used by History and any other
+    /// screen that reuses the toolbar geometry.
+    case pair(leading: OldOSBarButton?, trailing: OldOSBarButton?)
+}
+
+/// OldOS `tool_bar`: 45pt tall, 1pt hairline on top, and three completely
+/// different button sets depending on what the browser is doing.
 struct SafariToolbar: View {
-    @ObservedObject var tab: SafariTab
-    let isPrivate: Bool
-    let tabCount: Int
-    let bottomInset: CGFloat
+    let theme: OldOSSafariTheme
 
-    let onTabs: () -> Void
-    let onLibrary: () -> Void
-    let onShare: () -> Void
+    var canGoBack: Bool = false
+    var canGoForward: Bool = false
 
-    private let contentHeight: CGFloat = 48
+    var mode: SafariToolbarMode = .browsing
+    var tabCount: Int = 1
+    var isPrivate: Bool = false
+    var isEditingBookmarks: Bool = false
+    var canCreateTab: Bool = true
+    var bottomInset: CGFloat = 0
 
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            LinearGradient(
-                colors: isPrivate
-                    ? [OldSafariPalette.chromeTopPrivate, OldSafariPalette.chromeBottomPrivate]
-                    : [OldSafariPalette.chromeTop, OldSafariPalette.chromeBottom],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea(edges: .bottom)
+    var onBack: () -> Void = {}
+    var onForward: () -> Void = {}
+    var onShare: () -> Void = {}
+    var onBookmarks: () -> Void = {}
+    var onTabs: () -> Void = {}
+    var onNewPage: () -> Void = {}
+    var onDone: () -> Void = {}
+    var onToggleEditing: () -> Void = {}
+    var onNewFolder: () -> Void = {}
+    var onTogglePrivate: () -> Void = {}
 
-            HStack(spacing: 0) {
-                legacyIconButton("NavBack", disabled: !tab.canGoBack) { tab.goBack() }
-                legacyIconButton("NavForward", disabled: !tab.canGoForward) { tab.goForward() }
-                legacyIconButton("NavAction", disabled: tab.url == nil, action: onShare)
-                legacyIconButton("NavBookmarks", disabled: false, action: onLibrary)
-
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onTabs()
-                } label: {
-                    ZStack {
-                        Image(tabIconName)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 28, height: 28)
-                        Text("\(tabCount)")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white)
-                            .shadow(color: .black.opacity(0.8), radius: 1)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: contentHeight)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(height: contentHeight)
-            .padding(.bottom, bottomInset)
-        }
-        .frame(height: contentHeight + bottomInset)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Color.black.opacity(0.65)).frame(height: 1)
-        }
-    }
-
-    private var tabIconName: String {
+    private var tabImage: String {
         let clamped = min(max(tabCount, 1), 8)
         return clamped == 1 ? "NavTab" : "NavTab\(clamped)"
     }
 
-    private func legacyIconButton(_ image: String, disabled: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            guard !disabled else { return }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            action()
-        } label: {
-            Image(image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 28, height: 28)
-                .opacity(disabled ? 0.35 : 1)
-                .frame(maxWidth: .infinity)
-                .frame(height: contentHeight)
-                .contentShape(Rectangle())
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                switch mode {
+                case .browsing:
+                    HStack(spacing: 0) {
+                        OldOSToolBarButton(image: "NavBack", enabled: canGoBack, action: onBack)
+                        OldOSToolBarButton(image: "NavForward", enabled: canGoForward, action: onForward)
+                        OldOSToolBarButton(image: "NavAction", action: onShare)
+                        OldOSToolBarButton(image: "NavBookmarks", action: onBookmarks)
+                        OldOSToolBarButton(image: tabImage, action: onTabs)
+                    }
+                    .transition(.opacity)
+
+                case .tabs:
+                    HStack(spacing: 0) {
+                        OldOSRectangleButton(
+                            title: "New Page",
+                            type: canCreateTab ? theme.secondaryButton : theme.neutralButton,
+                            action: onNewPage
+                        )
+                        .opacity(canCreateTab ? 1 : 0.5)
+                        .allowsHitTesting(canCreateTab)
+                        .padding(.leading, 5)
+
+                        Spacer(minLength: 0)
+
+                        OldOSRectangleButton(
+                            title: "Private",
+                            type: isPrivate ? .blue : theme.secondaryButton,
+                            action: onTogglePrivate
+                        )
+
+                        Spacer(minLength: 0)
+
+                        OldOSRectangleButton(title: "Done", type: .blue, action: onDone)
+                            .padding(.trailing, 5)
+                    }
+                    .transition(.opacity)
+
+                case .bookmarks:
+                    HStack(spacing: 0) {
+                        OldOSRectangleButton(
+                            title: isEditingBookmarks ? "Done" : " Edit ",
+                            type: isEditingBookmarks ? .blue : theme.secondaryButton,
+                            action: onToggleEditing
+                        )
+                        .padding(.leading, 5)
+
+                        Spacer(minLength: 0)
+
+                        if isEditingBookmarks {
+                            OldOSRectangleButton(title: "New Folder", type: theme.secondaryButton, action: onNewFolder)
+                                .padding(.trailing, 5)
+                        }
+                    }
+                    .transition(.opacity)
+
+                case let .pair(leading, trailing):
+                    HStack(spacing: 0) {
+                        if let leading {
+                            OldOSRectangleButton(title: leading.title, type: leading.type, action: leading.action)
+                                .padding(.leading, 5)
+                        }
+                        Spacer(minLength: 0)
+                        if let trailing {
+                            OldOSRectangleButton(title: trailing.title, type: trailing.type, action: trailing.action)
+                                .padding(.trailing, 5)
+                        }
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .frame(height: 45)
+
+            if bottomInset > 0 {
+                Color.clear.frame(height: bottomInset)
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(disabled)
+        .background(
+            VStack(spacing: 0) {
+                LinearGradient(oldOS: theme.toolbarGradient).frame(height: 45)
+                theme.toolbarGradient.last?.color ?? Color.black
+            }
+            .oldOSBorder(width: 1, edges: [.top], color: theme.barHairline)
+        )
     }
 }

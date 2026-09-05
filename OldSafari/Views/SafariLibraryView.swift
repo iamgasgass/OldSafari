@@ -1,257 +1,226 @@
 import SwiftUI
 import UIKit
 
-/// Full-screen legacy Safari library.  The same skeuomorphic controls are used
-/// for Bookmarks, History, editing, destructive confirmation and private mode.
+/// OldOS `bookmarks_view`, extended with the History screen iOS 6 actually
+/// shipped (day sections, Clear History) and a full Private Browsing skin.
 struct SafariLibraryView: View {
     @ObservedObject var store: SafariTabStore
+    let theme: OldOSSafariTheme
+    let topInset: CGFloat
+    let bottomInset: CGFloat
     let onClose: () -> Void
 
-    @State private var section = 0
-    @State private var editing = false
-    @State private var showClearHistory = false
-    @State private var targetTabID: UUID?
-
-    private var privateMode: Bool { store.isPrivateMode }
-    private var panel: Color {
-        privateMode ? Color(red: 0.075, green: 0.075, blue: 0.09) : Color(red: 0.93, green: 0.94, blue: 0.96)
-    }
-    private var rowTop: Color { privateMode ? Color(red: 0.18, green: 0.18, blue: 0.21) : .white }
-    private var rowBottom: Color { privateMode ? Color(red: 0.08, green: 0.08, blue: 0.10) : Color(red: 0.88, green: 0.90, blue: 0.94) }
-    private var primaryText: Color { privateMode ? .white : Color(red: 0.05, green: 0.10, blue: 0.18) }
-    private var secondaryText: Color { privateMode ? .white.opacity(0.58) : .black.opacity(0.52) }
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                panel.ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    SafariLegacyNavigationBar(
-                        title: section == 0 ? "Bookmarks" : "History",
-                        leading: {
-                            if section == 0 && !store.bookmarks.isEmpty {
-                                SafariLegacyTextButton(title: editing ? "Done" : "Edit", compact: true) {
-                                    withAnimation(.easeOut(duration: 0.12)) { editing.toggle() }
-                                }
-                            } else if section == 1 && !store.history.isEmpty {
-                                SafariLegacyTextButton(title: "Clear", destructive: true, compact: true) {
-                                    showClearHistory = true
-                                }
-                            } else {
-                                Color.clear.frame(height: 30)
-                            }
-                        },
-                        trailing: {
-                            SafariLegacyTextButton(title: "Done", compact: true, action: onClose)
-                        }
-                    )
-
-                    SafariLegacySegmentedControl(
-                        selection: $section,
-                        labels: privateMode ? ["Bookmarks", "History • Private"] : ["Bookmarks", "History"]
-                    )
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-
-                    if section == 0 { bookmarksList } else { historyList }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                if showClearHistory {
-                    SafariLegacyConfirmationOverlay(
-                        privateMode: privateMode,
-                        title: "Clear History?",
-                        message: "This will remove all non-private browsing history.",
-                        destructiveTitle: "Clear History",
-                        onCancel: { showClearHistory = false },
-                        onConfirm: {
-                            store.clearHistory()
-                            showClearHistory = false
-                        }
-                    )
-                    .zIndex(10)
-                }
-            }
-            .padding(.top, geometry.safeAreaInsets.top)
-            .padding(.bottom, geometry.safeAreaInsets.bottom)
-            .ignoresSafeArea()
-        }
-        .preferredColorScheme(privateMode ? .dark : .light)
-        .onAppear { targetTabID = store.selectedID }
-    }
-
-    private var bookmarksList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                if store.bookmarks.isEmpty {
-                    SafariLibraryEmptyState(privateMode: privateMode, icon: "Bookmark",
-                                            title: "No Bookmarks",
-                                            subtitle: "Bookmarks you add will appear here.")
-                } else {
-                    ForEach(Array(store.bookmarks.enumerated()), id: \.element.id) { index, bookmark in
-                        legacyRow {
-                            HStack(spacing: 9) {
-                                if editing {
-                                    Button {
-                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                        withAnimation(.easeOut(duration: 0.15)) {
-                                            store.removeBookmarks(at: IndexSet(integer: index))
-                                        }
-                                    } label: {
-                                        Image("UIRemoveControlMinus")
-                                            .resizable().scaledToFit()
-                                            .frame(width: 23, height: 23)
-                                            .padding(.horizontal, 3)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                Button {
-                                    open(bookmark.url)
-                                } label: {
-                                    HStack(spacing: 9) {
-                                        Image("Bookmark").resizable().scaledToFit().frame(width: 24, height: 24)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(bookmark.title.isEmpty ? "Untitled" : bookmark.title)
-                                                .font(.system(size: 15, weight: .semibold))
-                                                .foregroundStyle(primaryText).lineLimit(1)
-                                            Text(bookmark.url)
-                                                .font(.system(size: 10))
-                                                .foregroundStyle(secondaryText).lineLimit(1)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundStyle(privateMode ? .white.opacity(0.35) : .black.opacity(0.30))
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(editing)
-                            }
-                            .padding(.horizontal, 10)
-                            .frame(minHeight: 56)
-                        }
-                    }
-                }
-            }
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    private var historyList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                if store.history.isEmpty {
-                    SafariLibraryEmptyState(privateMode: privateMode, icon: "HistoryFolder",
-                                            title: "No History",
-                                            subtitle: "Pages you visit will appear here.")
-                } else {
-                    ForEach(SafariHistoryEntry.grouped(store.history), id: \.label) { group in
-                        Text(group.label.uppercased())
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(privateMode ? .white.opacity(0.55) : Color(red: 0.24, green: 0.31, blue: 0.40))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10).padding(.top, 12).padding(.bottom, 4)
-
-                        ForEach(group.entries) { entry in
-                            legacyRow {
-                                Button { open(entry.url) } label: {
-                                    HStack(spacing: 9) {
-                                        Image("HistoryFolder").resizable().scaledToFit().frame(width: 24, height: 24)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(entry.title.isEmpty ? "Untitled" : entry.title)
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundStyle(primaryText).lineLimit(1)
-                                            Text(entry.url)
-                                                .font(.system(size: 10))
-                                                .foregroundStyle(secondaryText).lineLimit(1)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundStyle(privateMode ? .white.opacity(0.35) : .black.opacity(0.30))
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .frame(minHeight: 54)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    @ViewBuilder
-    private func legacyRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
-            .background(LinearGradient(colors: [rowTop, rowBottom], startPoint: .top, endPoint: .bottom))
-            .overlay(alignment: .bottom) { Rectangle().fill(privateMode ? Color.white.opacity(0.10) : Color.black.opacity(0.14)).frame(height: 1) }
-    }
-
-    private func open(_ rawURL: String) {
-        guard let url = URL(string: rawURL),
-              let current = store.tab(for: targetTabID) ?? store.selected else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        store.select(current)
-        current.load(url)
-        onClose()
-    }
-}
-
-private struct SafariLibraryEmptyState: View {
-    let privateMode: Bool
-    let icon: String
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(icon).resizable().scaledToFit().frame(width: 42, height: 42)
-                .opacity(privateMode ? 0.55 : 0.65)
-            Text(title).font(.system(size: 17, weight: .bold))
-                .foregroundStyle(privateMode ? .white : Color(red: 0.20, green: 0.24, blue: 0.29))
-            Text(subtitle).font(.system(size: 12))
-                .foregroundStyle(privateMode ? .white.opacity(0.50) : .black.opacity(0.52))
-        }
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity)
-        .padding(.top, 70).padding(.horizontal, 30)
-    }
-}
-
-private struct SafariLegacyConfirmationOverlay: View {
-    let privateMode: Bool
-    let title: String
-    let message: String
-    let destructiveTitle: String
-    let onCancel: () -> Void
-    let onConfirm: () -> Void
+    @State private var showingHistory = false
+    @State private var isEditing = false
+    @State private var armedBookmark: UUID?
+    @State private var confirmClear = false
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.52).ignoresSafeArea()
+            theme.listBackground.ignoresSafeArea()
+
             VStack(spacing: 0) {
-                Text(title).font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(privateMode ? .white : Color(red: 0.05, green: 0.10, blue: 0.18))
-                    .padding(.top, 15)
-                Text(message).font(.system(size: 12))
-                    .foregroundStyle(privateMode ? .white.opacity(0.60) : .black.opacity(0.60))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 18).padding(.top, 5).padding(.bottom, 14)
-                HStack(spacing: 0) {
-                    SafariLegacyTextButton(title: "Cancel", compact: true, action: onCancel)
-                    SafariLegacyTextButton(title: destructiveTitle, destructive: true, compact: true, action: onConfirm)
-                }.padding(8)
+                Color.clear.frame(height: topInset)
+
+                OldOSTitleBar(
+                    title: showingHistory ? "History" : "Bookmarks",
+                    theme: theme,
+                    leading: showingHistory
+                        ? OldOSBarButton("Bookmarks", type: theme.secondaryButton) {
+                            withAnimation(.linear(duration: 0.22)) { showingHistory = false }
+                        }
+                        : nil,
+                    trailing: isEditing
+                        ? nil
+                        : OldOSBarButton("Done", type: .blue, action: onClose)
+                )
+
+                if showingHistory {
+                    historyList
+                } else {
+                    bookmarksList
+                }
+
+                bottomBar
             }
-            .frame(maxWidth: 310)
-            .background(privateMode ? Color(red: 0.15, green: 0.15, blue: 0.18) : Color(red: 0.94, green: 0.95, blue: 0.97))
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.black.opacity(0.45), lineWidth: 1))
-            .shadow(color: .black.opacity(0.55), radius: 12, x: 0, y: 5)
+
+            if confirmClear {
+                OldOSActionSheet(
+                    theme: theme,
+                    buttons: [
+                        OldOSSheetButton(title: "Clear History", destructive: true) {
+                            withAnimation(.linear(duration: 0.2)) {
+                                store.clearHistory()
+                                confirmClear = false
+                            }
+                        }
+                    ],
+                    heightFraction: 0.30,
+                    bottomInset: bottomInset,
+                    onCancel: { withAnimation(.linear(duration: 0.2)) { confirmClear = false } }
+                )
+                .transition(.move(edge: .bottom))
+                .zIndex(5)
+            }
         }
+        .ignoresSafeArea()
+    }
+
+    // MARK: Bookmarks
+
+    private var bookmarksList: some View {
+        OldOSPlainList {
+            OldOSTableRow(
+                icon: "HistoryFolder",
+                title: "History",
+                theme: theme
+            ) {
+                withAnimation(.linear(duration: 0.22)) { showingHistory = true }
+            }
+
+            ForEach(store.bookmarks) { bookmark in
+                OldOSTableRow(
+                    icon: "Bookmark",
+                    title: bookmark.title.isEmpty ? bookmark.url : bookmark.title,
+                    theme: theme,
+                    showsChevron: !isEditing,
+                    action: {
+                        guard !isEditing else { return }
+                        open(bookmark.url)
+                    },
+                    accessory: {
+                        HStack(spacing: 0) {
+                            if isEditing {
+                                OldOSRemoveControl(armed: armedBookmark == bookmark.id) {
+                                    withAnimation(.linear(duration: 0.15)) {
+                                        armedBookmark = armedBookmark == bookmark.id ? nil : bookmark.id
+                                    }
+                                }
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                            }
+                        }
+                    }
+                )
+                .overlay(alignment: .trailing) {
+                    if isEditing, armedBookmark == bookmark.id {
+                        OldOSRectangleButton(title: "Delete", type: .red) {
+                            withAnimation(.linear(duration: 0.2)) {
+                                store.removeBookmark(id: bookmark.id)
+                                armedBookmark = nil
+                            }
+                        }
+                        .padding(.trailing, 12)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
+                }
+            }
+
+            if store.bookmarks.isEmpty {
+                emptyState(title: "No Bookmarks", subtitle: "Bookmarks you add appear here.")
+            }
+        }
+        .background(theme.listBackground)
+    }
+
+    // MARK: History
+
+    private var historyList: some View {
+        OldOSPlainList {
+            if store.history.isEmpty {
+                emptyState(title: "No History", subtitle: "Pages you visit appear here.")
+            } else {
+                ForEach(SafariHistoryEntry.grouped(store.history), id: \.label) { group in
+                    sectionHeader(group.label)
+
+                    ForEach(group.entries) { entry in
+                        OldOSTableRow(
+                            icon: "Bookmark",
+                            title: entry.title.isEmpty ? entry.url : entry.title,
+                            detail: entry.url,
+                            theme: theme
+                        ) {
+                            open(entry.url)
+                        }
+                    }
+                }
+            }
+        }
+        .background(theme.listBackground)
+    }
+
+    private func sectionHeader(_ label: String) -> some View {
+        ZStack {
+            LinearGradient(oldOS: theme.barGradient)
+                .oldOSBorder(width: 0.95, edges: [.bottom], color: theme.barHairline)
+
+            HStack {
+                Text(label)
+                    .font(OldOSFont.bold(15))
+                    .foregroundColor(.white)
+                    .shadow(color: Color.black.opacity(0.45), radius: 0, x: 0, y: -1)
+                    .padding(.leading, 12)
+                Spacer()
+            }
+        }
+        .frame(height: 23)
+    }
+
+    private func emptyState(title: String, subtitle: String) -> some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(OldOSFont.bold(18))
+                .foregroundColor(theme.listRowText)
+            Text(subtitle)
+                .font(OldOSFont.regular(14))
+                .foregroundColor(theme.listRowDetail)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
+    }
+
+    // MARK: Bottom bar
+
+    private var bottomBar: some View {
+        Group {
+            if showingHistory {
+                SafariToolbar(
+                    theme: theme,
+                    mode: .pair(
+                        leading: store.history.isEmpty
+                            ? nil
+                            : OldOSBarButton(" Clear ", type: theme.secondaryButton) {
+                                withAnimation(.linear(duration: 0.2)) { confirmClear = true }
+                            },
+                        trailing: nil
+                    ),
+                    isPrivate: store.isPrivateMode,
+                    bottomInset: bottomInset
+                )
+            } else {
+                SafariToolbar(
+                    theme: theme,
+                    mode: .bookmarks,
+                    isPrivate: store.isPrivateMode,
+                    isEditingBookmarks: isEditing,
+                    bottomInset: bottomInset,
+                    onDone: onClose,
+                    onToggleEditing: {
+                        withAnimation(.linear(duration: 0.2)) {
+                            isEditing.toggle()
+                            armedBookmark = nil
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    // MARK: Actions
+
+    private func open(_ rawURL: String) {
+        guard let url = URL(string: rawURL), let tab = store.selected else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        tab.load(url)
+        onClose()
     }
 }

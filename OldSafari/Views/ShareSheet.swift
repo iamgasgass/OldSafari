@@ -1,200 +1,347 @@
 import SwiftUI
 import UIKit
+import WebKit
 
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+// MARK: - iOS 6 action sheet
+
+/// A single row of an OldOS/iOS 6 action sheet.
+struct OldOSSheetButton: Identifiable {
+    let id = UUID()
+    let title: String
+    var destructive: Bool = false
+    let action: () -> Void
 }
 
-/// OldOS-style Safari action panel.  The panel itself is custom skeuomorphic
-/// chrome; the system share controller is used only for actual OS sharing.
-struct SafariActionsView: View {
-    @ObservedObject var store: SafariTabStore
-    let onClose: () -> Void
-
-    @State private var showSystemShare = false
-    @State private var showMailShare = false
-    @State private var showBookmarkEditor = false
-    @State private var bookmarkTitle = ""
-    @State private var targetTabID: UUID?
-
-    private var currentTab: SafariTab? { store.tab(for: targetTabID) ?? store.selected }
-    private var privateMode: Bool { store.isPrivateMode }
-    private var text: Color { privateMode ? .white : Color(red: 0.04, green: 0.12, blue: 0.25) }
-    private var muted: Color { privateMode ? .white.opacity(0.58) : .black.opacity(0.32) }
-    private var rowTop: Color { privateMode ? Color(red: 0.18, green: 0.18, blue: 0.21) : .white }
-    private var rowBottom: Color { privateMode ? Color(red: 0.08, green: 0.08, blue: 0.10) : Color(red: 0.88, green: 0.90, blue: 0.94) }
-
-    private var bookmarkExists: Bool {
-        guard let url = currentTab?.url?.absoluteString else { return false }
-        return store.bookmarks.contains { $0.url == url }
-    }
+/// OldOS `share_view`: a 30pt brushed strip, a translucent charcoal body and
+/// double-bevelled 50pt buttons.  Reused for every action sheet in the app so
+/// Clear History and Share look like they came from the same 2012 binary.
+struct OldOSActionSheet: View {
+    let theme: OldOSSafariTheme
+    let buttons: [OldOSSheetButton]
+    var cancelTitle: String = "Cancel"
+    var heightFraction: CGFloat = 0.58
+    var bottomInset: CGFloat = 0
+    let onCancel: () -> Void
 
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottom) {
-                Color.black.opacity(0.42).ignoresSafeArea()
+                theme.scrim.opacity(0.45)
+                    .ignoresSafeArea()
                     .contentShape(Rectangle())
-                    .onTapGesture { onClose() }
+                    .onTapGesture { onCancel() }
 
-                VStack(spacing: 0) {
-                    SafariLegacyNavigationBar(
-                        title: "Safari",
-                        leading: { Color.clear.frame(width: 70, height: 30) },
-                        trailing: { SafariLegacyTextButton(title: "Cancel", compact: true, action: onClose) }
-                    )
+                ZStack {
+                    VStack(spacing: 0) {
+                        Rectangle()
+                            .fill(LinearGradient(oldOS: theme.shareStrip))
+                            .oldOSInnerShadowBottom(color: Color.white.opacity(0.98), radius: 0.1)
+                            .oldOSBorder(width: 1, edges: [.top], color: .black)
+                            .frame(height: 30)
 
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            actionRow(icon: "Bookmark", title: bookmarkExists ? "Bookmarked" : "Add Bookmark",
-                                      disabled: currentTab?.url == nil || bookmarkExists) {
-                                bookmarkTitle = currentTab?.title.isEmpty == false
-                                    ? currentTab?.title ?? "Bookmark"
-                                    : (currentTab?.url?.host ?? "Bookmark")
-                                showBookmarkEditor = true
-                            }
-                            actionRow(systemImage: "doc.on.doc", title: "Copy Link", disabled: currentTab?.url == nil) {
-                                UIPasteboard.general.string = currentTab?.url?.absoluteString
-                                onClose()
-                            }
-                            actionRow(systemImage: "square.and.arrow.up", title: "Share…", disabled: currentTab?.url == nil) {
-                                showSystemShare = true
-                            }
-                            actionRow(systemImage: "arrow.clockwise", title: "Reload", disabled: currentTab == nil) {
-                                currentTab?.reload(); onClose()
-                            }
-                            actionRow(systemImage: "magnifyingglass", title: "Find on Page", disabled: currentTab == nil) {
-                                currentTab?.findOnPage(); onClose()
-                            }
-                            actionRow(systemImage: "desktopcomputer",
-                                      title: currentTab?.isRequestingDesktopSite == true ? "Request Mobile Site" : "Request Desktop Site",
-                                      disabled: currentTab == nil) {
-                                currentTab?.toggleDesktopSite(); onClose()
-                            }
-                            actionRow(systemImage: "house", title: "Add to Home Screen", disabled: true) {}
-                            actionRow(systemImage: "envelope", title: "Mail Link to this Page", disabled: currentTab?.url == nil) {
-                                showMailShare = true
-                            }
-                            actionRow(systemImage: "printer", title: "Print", disabled: currentTab?.url == nil) {
-                                if let webView = currentTab?.webView {
-                                    let controller = UIPrintInteractionController.shared
-                                    controller.printFormatter = webView.viewPrintFormatter()
-                                    controller.present(animated: true)
-                                }
-                            }
-                        }
+                        Rectangle().fill(LinearGradient(oldOS: theme.shareBody))
                     }
-                    .scrollIndicators(.hidden)
-                    .background(LinearGradient(colors: [rowTop, rowBottom], startPoint: .top, endPoint: .bottom))
-                }
-                .frame(maxWidth: .infinity)
-                .frame(maxHeight: geometry.size.height * 0.70)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.black.opacity(0.45), lineWidth: 1))
-                .shadow(color: .black.opacity(0.55), radius: 12, x: 0, y: 5)
-                .padding(.horizontal, 6)
-                .padding(.bottom, max(5, geometry.safeAreaInsets.bottom))
 
-                if showBookmarkEditor {
-                    SafariBookmarkEditorOverlay(
-                        privateMode: privateMode,
-                        title: $bookmarkTitle,
-                        url: currentTab?.url?.absoluteString ?? "",
-                        onCancel: { showBookmarkEditor = false },
-                        onSave: {
-                            store.addBookmark(title: bookmarkTitle, url: currentTab?.url?.absoluteString ?? "")
-                            showBookmarkEditor = false
-                            onClose()
+                    VStack(spacing: 0) {
+                        ForEach(Array(buttons.enumerated()), id: \.element.id) { index, button in
+                            sheetButton(
+                                title: button.title,
+                                destructive: button.destructive,
+                                action: button.action
+                            )
+                            .padding(.top, index == 0 ? 28 : 2.5)
+                            .padding(.bottom, 2.5)
                         }
-                    ).zIndex(5)
+
+                        Spacer(minLength: 0)
+
+                        cancelButton
+                            .padding(.bottom, 25 + bottomInset)
+                    }
                 }
+                .frame(height: geometry.size.height * heightFraction + bottomInset)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onAppear { targetTabID = store.selectedID }
-        .preferredColorScheme(privateMode ? .dark : .light)
-        .sheet(isPresented: $showSystemShare) {
-            if let url = currentTab?.url { ShareSheet(items: [url]) }
-        }
-        .sheet(isPresented: $showMailShare) {
-            if let url = currentTab?.url {
-                ShareSheet(items: ["\(currentTab?.title ?? "")\n\(url.absoluteString)", url])
-            }
-        }
+        .ignoresSafeArea()
     }
 
-    @ViewBuilder
-    private func actionRow(icon: String? = nil, systemImage: String? = nil,
-                           title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 11) {
-                Group {
-                    if let icon { Image(icon).resizable().scaledToFit() }
-                    else if let systemImage { Image(systemName: systemImage) }
-                }
-                .frame(width: 24, height: 24)
-                .foregroundStyle(privateMode ? .white.opacity(0.82) : Color(red: 0.06, green: 0.16, blue: 0.34))
+    private func sheetButton(title: String, destructive: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(LinearGradient(oldOS: theme.shareButtonOuterStroke), lineWidth: 0.5)
+                    )
+                    .oldOSInnerShadowBackground(
+                        RoundedRectangle(cornerRadius: 12),
+                        LinearGradient(oldOS: [theme.shareButtonBase, theme.shareButtonBase]),
+                        radius: 5.0 / 3.0,
+                        offset: CGPoint(x: 0, y: 1.0 / 3.0),
+                        intensity: 1
+                    )
 
-                Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(text)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold)).foregroundStyle(muted)
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(LinearGradient(oldOS: theme.shareButtonInner))
+                    .oldOSAddBorder(LinearGradient(oldOS: theme.shareButtonBorder), width: 0.4, cornerRadius: 9)
+                    .padding(3)
+
+                Text(title)
+                    .font(OldOSFont.bold(18))
+                    .foregroundColor(destructive ? .oldOS(189, 20, 33) : theme.shareButtonText)
+                    .shadow(color: theme.shareButtonTextShadow, radius: 0, x: 0, y: theme.shareButtonTextShadowY)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 48)
-            .background(LinearGradient(colors: [rowTop, rowBottom], startPoint: .top, endPoint: .bottom))
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(privateMode ? Color.white.opacity(0.10) : Color.black.opacity(0.14)).frame(height: 1)
-            }
+            .padding([.leading, .trailing], 25)
+            .frame(minHeight: 50, maxHeight: 50)
         }
         .buttonStyle(.plain)
-        .disabled(disabled)
-        .opacity(disabled ? 0.45 : 1)
+    }
+
+    private var cancelButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onCancel()
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(LinearGradient(oldOS: theme.shareButtonOuterStroke), lineWidth: 0.5)
+                    )
+                    .oldOSInnerShadowBackground(
+                        RoundedRectangle(cornerRadius: 12),
+                        LinearGradient(oldOS: [theme.shareButtonBase, theme.shareButtonBase]),
+                        radius: 5.0 / 3.0,
+                        offset: CGPoint(x: 0, y: 1.0 / 3.0),
+                        intensity: 1
+                    )
+
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(LinearGradient(oldOS: theme.shareCancelInner))
+                    .oldOSAddBorder(LinearGradient(oldOS: theme.shareCancelBorder), width: 0.4, cornerRadius: 9)
+                    .padding(3)
+                    .opacity(0.6)
+
+                Text(cancelTitle)
+                    .font(OldOSFont.bold(18))
+                    .foregroundColor(.white)
+                    .shadow(color: Color.black.opacity(0.9), radius: 0, x: 0, y: -0.9)
+            }
+            .padding([.leading, .trailing], 25)
+            .frame(minHeight: 50, maxHeight: 50)
+        }
+        .buttonStyle(.plain)
     }
 }
 
-private struct SafariBookmarkEditorOverlay: View {
-    let privateMode: Bool
+// MARK: - Share sheet
+
+/// The Safari action sheet, wired to real behaviour where iOS allows it.
+struct SafariActionsView: View {
+    @ObservedObject var store: SafariTabStore
+    @ObservedObject var tab: SafariTab
+    let theme: OldOSSafariTheme
+    let topInset: CGFloat
+    let bottomInset: CGFloat
+    let onClose: () -> Void
+
+    @State private var showAddBookmark = false
+    @State private var bookmarkTitle = ""
+
+    private var currentURL: URL? { tab.url }
+
+    var body: some View {
+        ZStack {
+            OldOSActionSheet(
+                theme: theme,
+                buttons: [
+                    OldOSSheetButton(title: "Add Bookmark") {
+                        bookmarkTitle = tab.title.isEmpty ? (currentURL?.host ?? "Untitled") : tab.title
+                        withAnimation(.linear(duration: 0.25)) { showAddBookmark = true }
+                    },
+                    OldOSSheetButton(title: "Add to Home Screen") {},
+                    OldOSSheetButton(title: "Mail Link to this Page") { mailLink() },
+                    OldOSSheetButton(title: "Copy") { copyLink() },
+                    OldOSSheetButton(title: "Print") { printPage() }
+                ],
+                bottomInset: bottomInset,
+                onCancel: onClose
+            )
+            .zIndex(1)
+
+            if showAddBookmark {
+                SafariAddBookmarkView(
+                    theme: theme,
+                    title: $bookmarkTitle,
+                    url: currentURL,
+                    topInset: topInset,
+                    onCancel: { withAnimation(.linear(duration: 0.25)) { showAddBookmark = false } },
+                    onSave: {
+                        if let currentURL {
+                            store.addBookmark(title: bookmarkTitle, url: currentURL.absoluteString)
+                        }
+                        withAnimation(.linear(duration: 0.25)) { showAddBookmark = false }
+                        onClose()
+                    }
+                )
+                .transition(.move(edge: .bottom))
+                .zIndex(2)
+            }
+        }
+    }
+
+    private func mailLink() {
+        guard let currentURL else { return }
+        let subject = (tab.title.isEmpty ? currentURL.absoluteString : tab.title)
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let body = currentURL.absoluteString
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let mailto = URL(string: "mailto:?subject=\(subject)&body=\(body)") {
+            UIApplication.shared.open(mailto, options: [:], completionHandler: nil)
+        }
+        onClose()
+    }
+
+    private func copyLink() {
+        guard let currentURL else { return }
+        UIPasteboard.general.string = currentURL.absoluteString
+        onClose()
+    }
+
+    private func printPage() {
+        let controller = UIPrintInteractionController.shared
+        let info = UIPrintInfo(dictionary: nil)
+        info.outputType = .general
+        info.jobName = tab.title.isEmpty ? "Web Page" : tab.title
+        controller.printInfo = info
+        controller.printFormatter = tab.webView.viewPrintFormatter()
+        controller.present(animated: true) { _, _, _ in }
+        onClose()
+    }
+}
+
+// MARK: - Add Bookmark
+
+/// OldOS `add_bookmark_view`, kept full screen instead of the 320x480 frame.
+struct SafariAddBookmarkView: View {
+    let theme: OldOSSafariTheme
     @Binding var title: String
-    let url: String
+    let url: URL?
+    let topInset: CGFloat
     let onCancel: () -> Void
     let onSave: () -> Void
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.50).ignoresSafeArea()
-            VStack(spacing: 0) {
-                SafariLegacyNavigationBar(
-                    title: "Add Bookmark",
-                    leading: { SafariLegacyTextButton(title: "Cancel", compact: true, action: onCancel) },
-                    trailing: {
-                        SafariLegacyTextButton(title: "Save", highlighted: true, compact: true, action: onSave)
-                            .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || url.isEmpty)
+        VStack(spacing: 0) {
+            Color.clear.frame(height: topInset)
+
+            ZStack {
+                theme.groupedBackground
+                OldOSPinstripeBackground(line: theme.groupedPinstripe).clipped()
+
+                VStack(spacing: 0) {
+                    OldOSTitleBar(
+                        title: "Add Bookmark",
+                        theme: theme,
+                        leading: OldOSBarButton("Cancel", type: theme.secondaryButton, action: onCancel),
+                        trailing: OldOSBarButton("Save", type: .blue, action: onSave)
+                    )
+
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            Spacer().frame(height: 20)
+
+                            OldOSGroupedCard(theme: theme, rowCount: 2) {
+                                ZStack {
+                                    Rectangle()
+                                        .fill(Color.clear)
+                                        .frame(height: 50)
+                                        .oldOSBorder(width: 1.25, edges: [.bottom], color: theme.cardStroke)
+
+                                    HStack(spacing: 0) {
+                                        ZStack(alignment: .leading) {
+                                            if title.isEmpty {
+                                                Text("Title")
+                                                    .font(OldOSFont.regular(18))
+                                                    .foregroundColor(theme.cardDetailText)
+                                                    .allowsHitTesting(false)
+                                            }
+                                            TextField("", text: $title)
+                                                .font(OldOSFont.regular(18))
+                                                .foregroundColor(theme.cardFieldText)
+                                                .submitLabel(.done)
+                                                .onSubmit(onSave)
+                                        }
+                                        .padding(.leading, 12)
+
+                                        if !title.isEmpty {
+                                            Button { title = "" } label: {
+                                                Image("UITextFieldClearButton")
+                                            }
+                                            .buttonStyle(.plain)
+                                            .fixedSize()
+                                            .padding(.trailing, 12)
+                                        }
+                                    }
+                                }
+                                .frame(height: 50)
+
+                                ZStack {
+                                    Rectangle().fill(Color.clear).frame(height: 50)
+                                    HStack {
+                                        Text(url?.absoluteString ?? "about:blank")
+                                            .font(OldOSFont.regular(18))
+                                            .foregroundColor(theme.cardDetailText)
+                                            .lineLimit(1)
+                                            .padding(.leading, 12)
+                                        Spacer()
+                                    }
+                                }
+                                .frame(height: 50)
+                            }
+
+                            Spacer().frame(height: 20)
+
+                            OldOSGroupedCard(theme: theme, rowCount: 1) {
+                                HStack {
+                                    Text("Bookmarks")
+                                        .font(OldOSFont.regular(18))
+                                        .foregroundColor(theme.cardFieldText)
+                                        .padding(.leading, 12)
+                                    Spacer()
+                                    Image("UITableNext").padding(.trailing, 12)
+                                }
+                                .frame(height: 50)
+                            }
+
+                            Spacer(minLength: 20)
+                        }
                     }
-                )
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Title").font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(privateMode ? .white.opacity(0.65) : .black.opacity(0.55))
-                    TextField("Title", text: $title)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 15))
-                    Text("Address").font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(privateMode ? .white.opacity(0.65) : .black.opacity(0.55))
-                        .padding(.top, 5)
-                    Text(url).font(.system(size: 12))
-                        .foregroundStyle(privateMode ? .white.opacity(0.62) : .black.opacity(0.65))
-                        .lineLimit(2)
+                    .scrollIndicators(.hidden)
                 }
-                .padding(14)
-                Spacer(minLength: 0)
             }
-            .frame(maxWidth: 360, maxHeight: 250)
-            .background(privateMode ? Color(red: 0.13, green: 0.13, blue: 0.16) : Color(red: 0.94, green: 0.95, blue: 0.97))
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.black.opacity(0.45), lineWidth: 1))
-            .shadow(color: .black.opacity(0.55), radius: 12, x: 0, y: 5)
         }
+        .background(theme.groupedBackground.ignoresSafeArea())
+        .ignoresSafeArea(edges: .bottom)
     }
+}
+
+// MARK: - System share sheet bridge
+
+/// Retained so the project keeps a UIKit escape hatch for future actions.
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

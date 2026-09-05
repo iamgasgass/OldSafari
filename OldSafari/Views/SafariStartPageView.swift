@@ -1,63 +1,66 @@
 import SwiftUI
 
+/// Shown while a page is still blank.  iOS 6 simply displayed an empty white
+/// document, so this stays deliberately quiet: the period-correct pinstriped
+/// grouped table with the user's bookmarks, and nothing else.
 struct SafariStartPageView: View {
     @ObservedObject var store: SafariTabStore
-    let tab: SafariTab
-
-    private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+    @ObservedObject var tab: SafariTab
+    let theme: OldOSSafariTheme
 
     var body: some View {
-        ScrollView {
-            if tab.isPrivate {
-                VStack(spacing: 10) {
-                    Image(systemName: "eyeglasses")
-                        .font(.system(size: 34))
-                        .foregroundStyle(.white.opacity(0.85))
-                    Text("Private Browsing")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(.white)
-                    Text("Safari won't remember the pages you visit, your search history, or your AutoFill information in this tab.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                }
-                .padding(.top, 80)
-            } else {
-                Text("Favorites")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 24)
+        ZStack {
+            theme.groupedBackground
+            OldOSPinstripeBackground(line: theme.groupedPinstripe).clipped()
 
-                LazyVGrid(columns: columns, spacing: 18) {
-                    ForEach(store.bookmarks) { bookmark in
-                        Button {
-                            if let url = URL(string: bookmark.url) {
-                                tab.load(url)
-                            }
-                        } label: {
-                            VStack(spacing: 6) {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color(.secondarySystemBackground))
-                                    .frame(width: 56, height: 56)
-                                    .overlay(
-                                        Text(String(bookmark.title.prefix(1)).uppercased())
-                                            .font(.system(size: 20, weight: .semibold))
-                                            .foregroundStyle(.secondary)
-                                    )
-                                Text(bookmark.title)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
+            ScrollView {
+                VStack(spacing: 0) {
+                    Spacer().frame(height: 20)
+
+                    if store.bookmarks.isEmpty {
+                        Text("No Bookmarks")
+                            .font(OldOSFont.bold(18))
+                            .foregroundColor(theme.sectionHeader)
+                            .padding(.top, 40)
+                    } else {
+                        OldOSGroupedCard(theme: theme, rowCount: store.bookmarks.count) {
+                            ForEach(Array(store.bookmarks.enumerated()), id: \.element.id) { index, bookmark in
+                                Button {
+                                    if let url = URL(string: bookmark.url) { tab.load(url) }
+                                } label: {
+                                    ZStack {
+                                        Rectangle()
+                                            .fill(Color.clear)
+                                            .frame(height: 50)
+                                            .oldOSBorder(
+                                                width: index == store.bookmarks.count - 1 ? 0 : 1.25,
+                                                edges: [.bottom],
+                                                color: theme.cardStroke
+                                            )
+                                        HStack(spacing: 0) {
+                                            Image("Bookmark").frame(width: 25, height: 50)
+                                            Text(bookmark.title.isEmpty ? bookmark.url : bookmark.title)
+                                                .font(OldOSFont.bold(18))
+                                                .foregroundColor(theme.listRowText)
+                                                .lineLimit(1)
+                                                .padding(.leading, 10)
+                                            Spacer(minLength: 0)
+                                            Image("UITableNext").padding(.trailing, 12)
+                                        }
+                                        .padding(.leading, 12)
+                                    }
+                                    .frame(height: 50)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
-                        .buttonStyle(.plain)
                     }
+
+                    Spacer(minLength: 20)
                 }
-                .padding(.horizontal, 24)
             }
+            .scrollIndicators(.hidden)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(tab.isPrivate ? Color.black : Color(.systemBackground))
     }
 }

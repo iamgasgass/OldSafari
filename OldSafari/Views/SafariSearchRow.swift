@@ -1,84 +1,122 @@
 import SwiftUI
 import UIKit
 
-/// Which of the two title-bar fields is currently being edited. Mirrors
-/// the mutually-exclusive editing_state_url / editing_state_google pair
-/// from the original OldOS Safari implementation.
 enum SafariSearchField: Hashable {
     case address
     case search
 }
 
-/// Reconstructs the classic OldOS Safari title bar: a compact address
-/// field alongside a dedicated Google search field, side by side. Tapping
-/// either field expands it to fill the row and reveals a Cancel button,
-/// exactly like stock Safari on iOS 4 — the piece that was missing from
-/// the single-field bar this app previously shipped with.
+/// OldOS `safari_title_bar`: page title on top, address field + Google capsule
+/// below, and a Cancel button that slides in from the trailing edge while
+/// either field is being edited.
 struct SafariSearchRow: View {
     @ObservedObject var tab: SafariTab
-    let isPrivate: Bool
+    let theme: OldOSSafariTheme
 
-    @FocusState private var focusedField: SafariSearchField?
+    @Binding var editingField: SafariSearchField?
+    @Binding var urlText: String
+    @Binding var googleText: String
 
-    private let cancelWidth: CGFloat = 56
+    var onNavigate: (String) -> Void
+    var onSearch: (String) -> Void
+
+    private var isEditingAddress: Bool { editingField == .address }
+    private var isEditingSearch: Bool { editingField == .search }
+    private var isEditing: Bool { editingField != nil }
+
+    private var addressEditingBinding: Binding<Bool> {
+        Binding(
+            get: { editingField == .address },
+            set: { editing in
+                if editing { editingField = .address } else if editingField == .address { editingField = nil }
+            }
+        )
+    }
+
+    private var searchEditingBinding: Binding<Bool> {
+        Binding(
+            get: { editingField == .search },
+            set: { editing in
+                if editing { editingField = .search } else if editingField == .search { editingField = nil }
+            }
+        )
+    }
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 6) {
-                if focusedField != .search {
-                    SafariAddressBar(
-                        tab: tab,
-                        isPrivate: isPrivate,
-                        focusedField: $focusedField
-                    )
-                    .frame(width: addressWidth(in: geometry.size.width))
-                }
+            ZStack {
+                LinearGradient(oldOS: theme.barGradient)
+                    .oldOSBorder(width: 1, edges: [.bottom], color: theme.barHairline)
+                    .oldOSInnerShadowBottom(color: theme.barHighlight, radius: 0.025)
 
-                if focusedField != .address {
-                    SafariGoogleSearchBar(
-                        tab: tab,
-                        isPrivate: isPrivate,
-                        focusedField: $focusedField
-                    )
-                    .frame(width: searchWidth(in: geometry.size.width))
-                }
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
 
-                if focusedField != nil {
-                    Button("Cancel") {
-                        focusedField = nil
-                        UIApplication.shared.sendAction(
-                            #selector(UIResponder.resignFirstResponder),
-                            to: nil, from: nil, for: nil
-                        )
+                    Text(tab.title.isEmpty ? "Untitled" : tab.title)
+                        .foregroundColor(theme.pageTitle)
+                        .font(OldOSFont.bold(14))
+                        .shadow(color: theme.pageTitleShadow, radius: 0, x: 0, y: theme.pageTitleShadowY)
+                        .lineLimit(1)
+                        .padding([.leading, .trailing], 24)
+
+                    HStack(spacing: 0) {
+                        if !isEditingSearch {
+                            SafariAddressBar(
+                                tab: tab,
+                                theme: theme,
+                                text: $urlText,
+                                isEditing: addressEditingBinding,
+                                onSubmit: onNavigate
+                            )
+                            .frame(width: isEditingAddress ? geometry.size.width - 76 : geometry.size.width * 2 / 3 - 15)
+                        }
+
+                        if !isEditingAddress {
+                            SafariGoogleSearchBar(
+                                theme: theme,
+                                text: $googleText,
+                                isEditing: searchEditingBinding,
+                                onSubmit: onSearch
+                            )
+                            .frame(width: isEditingSearch ? geometry.size.width - 76 : geometry.size.width * 1 / 3)
+                        }
+
+                        if isEditing {
+                            Spacer().frame(width: 69)
+                        }
                     }
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(isPrivate ? .white : Color(red: 0.06, green: 0.14, blue: 0.35))
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .frame(height: 32)
+
+                    Spacer(minLength: 0)
                 }
             }
-            .padding(.horizontal, 6)
-            .frame(height: geometry.size.height)
-            .animation(.easeInOut(duration: 0.2), value: focusedField)
         }
-        .frame(height: 34)
-        .padding(.top, 4)
-    }
-
-    private func addressWidth(in totalWidth: CGFloat) -> CGFloat {
-        let usable = totalWidth - 12
-        switch focusedField {
-        case .address: return max(usable - cancelWidth - 6, 0)
-        case .search: return 0
-        case nil: return usable * 0.62 - 3
-        }
-    }
-
-    private func searchWidth(in totalWidth: CGFloat) -> CGFloat {
-        let usable = totalWidth - 12
-        switch focusedField {
-        case .search: return max(usable - cancelWidth - 6, 0)
-        case .address: return 0
-        case nil: return usable * 0.38 - 3
+        .frame(height: 60)
+        .overlay(alignment: .bottomTrailing) {
+            if isEditing {
+                Button {
+                    withAnimation(.linear(duration: 0.22)) { editingField = nil }
+                    oldOSHideKeyboard()
+                } label: {
+                    Text("Cancel")
+                        .font(OldOSFont.bold(13.25))
+                        .foregroundColor(.white)
+                        .shadow(color: Color.black.opacity(0.75), radius: 1, x: 0, y: -0.25)
+                        .frame(width: 59, height: 32)
+                        .oldOSInnerShadowBackground(
+                            RoundedRectangle(cornerRadius: 5.5),
+                            oldOSButtonGradient(theme.neutralButton),
+                            radius: 0.8,
+                            offset: CGPoint(x: 0, y: 0.6),
+                            intensity: 0.7
+                        )
+                        .shadow(color: Color.white.opacity(0.28), radius: 0, x: 0, y: 0.8)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 12)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
     }
 }

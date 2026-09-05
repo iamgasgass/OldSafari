@@ -1,157 +1,125 @@
-import SwiftUI
 import Combine
+import SwiftUI
+import UIKit
 
-/// OldOS/iOS 6-inspired address field.  The loading treatment deliberately
-/// stays restrained: a thin blue progress sweep along the lower edge of the
-/// field, plus the original stop/reload control.  This avoids the modern
-/// shimmer effect and keeps the chrome visually close to legacy Safari.
+/// OldOS `url_search_bar`.
+///
+/// The loading treatment is the important part: iOS 6 painted a glossy blue
+/// plate behind the address field and covered it with the field's own fill,
+/// then slid the covering edge to the right as `estimatedProgress` advanced.
+/// That is reproduced exactly with a two-stop hard-step gradient whose stop
+/// location *is* the progress value.
 struct SafariAddressBar: View {
     @ObservedObject var tab: SafariTab
-    let isPrivate: Bool
-    var focusedField: FocusState<SafariSearchField?>.Binding
+    let theme: OldOSSafariTheme
 
-    @State private var text = ""
+    @Binding var text: String
+    @Binding var isEditing: Bool
 
-    private var focused: Bool { focusedField.wrappedValue == .address }
-    private var progress: CGFloat { CGFloat(max(0, min(tab.estimatedProgress, 1))) }
+    var onSubmit: (String) -> Void
+
+    @State private var progress: Double = 1
+    @State private var showsPlate: Bool = false
+
+    private var stopLocation: CGFloat {
+        CGFloat(min(max(showsPlate ? progress : 1, 0), 1))
+    }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            LinearGradient(
-                colors: isPrivate
-                    ? [OldSafariPalette.fieldTopPrivate, OldSafariPalette.fieldBottomPrivate]
-                    : [OldSafariPalette.fieldTop, OldSafariPalette.fieldBottom],
-                startPoint: .top, endPoint: .bottom
-            )
+        HStack(spacing: 0) {
+            Spacer(minLength: 5)
 
-            // Legacy Safari-style progress: no shimmer, no extra row.
-            if tab.isLoading {
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.black.opacity(isPrivate ? 0.38 : 0.16))
-                            .frame(height: 2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        Rectangle()
-                            .fill(
-                                LinearGradient(
-                                    colors: isPrivate
-                                        ? [Color(red: 0.18, green: 0.40, blue: 0.82),
-                                           Color(red: 0.34, green: 0.60, blue: 1.00)]
-                                        : [Color(red: 0.12, green: 0.38, blue: 0.86),
-                                           Color(red: 0.34, green: 0.66, blue: 1.00)],
-                                    startPoint: .top, endPoint: .bottom
-                                )
-                            )
-                            .frame(width: max(2, proxy.size.width * progress), height: 2)
-                            .animation(.easeOut(duration: 0.16), value: progress)
+            HStack(alignment: .center, spacing: 10) {
+                ZStack(alignment: .leading) {
+                    if text.isEmpty && !isEditing {
+                        Text("Address")
+                            .font(OldOSFont.regular(15))
+                            .foregroundColor(theme.fieldPlaceholder)
+                            .allowsHitTesting(false)
                     }
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                }
-                .allowsHitTesting(false)
-            }
 
-            HStack(spacing: 5) {
-                if !focused, tab.isSecure {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(isPrivate ? .white.opacity(0.82) : .secondary)
-                }
-
-                TextField("Address", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(isPrivate ? Color.white : Color.black)
+                    TextField("", text: $text, onEditingChanged: { changed in
+                        withAnimation(.linear(duration: 0.22)) { isEditing = changed }
+                    })
+                    .font(OldOSFont.regular(15))
+                    .foregroundColor(isEditing ? theme.fieldTextActive : theme.fieldTextIdle)
                     .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .disableAutocorrection(true)
                     .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled(true)
-                    .focused(focusedField, equals: .address)
                     .submitLabel(.go)
-                    .multilineTextAlignment(focused ? .leading : .center)
-                    .onSubmit(navigate)
-                    .onAppear { syncFromWebView(force: true) }
-                    .onReceive(tab.$url) { _ in
-                        if !focused { syncFromWebView(force: true) }
+                    .onSubmit {
+                        onSubmit(text)
+                        withAnimation(.linear(duration: 0.22)) { isEditing = false }
+                        oldOSHideKeyboard()
                     }
-                    .onChange(of: focusedField.wrappedValue) { newValue in
-                        if newValue != .address { syncFromWebView(force: true) }
-                    }
+                }
 
-                if focused && !text.isEmpty {
-                    Button { text = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                if isEditing, !text.isEmpty {
+                    Button {
+                        text = ""
+                    } label: {
+                        Image("UITextFieldClearButton")
                     }
                     .buttonStyle(.plain)
-                } else if !focused {
+                    .fixedSize()
+                }
+
+                if !isEditing {
                     Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         if tab.isLoading { tab.stop() } else { tab.reload() }
                     } label: {
-                        Group {
-                            if tab.isLoading {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 11, weight: .bold))
-                            } else {
-                                Image("AddressViewReload")
-                                    .resizable()
-                                    .scaledToFit()
-                            }
-                        }
-                        .frame(width: 17, height: 17)
-                        .foregroundStyle(isPrivate ? .white.opacity(0.86) : OldSafariPalette.placeholderText)
+                        Image("AddressViewReload")
                     }
                     .buttonStyle(.plain)
-                    .contextMenu {
-                        Button { tab.toggleDesktopSite() } label: {
-                            Label(
-                                tab.isRequestingDesktopSite ? "Request Mobile Website" : "Request Desktop Website",
-                                systemImage: "display"
-                            )
-                        }
-                        Button { tab.findOnPage() } label: {
-                            Label("Find on Page", systemImage: "magnifyingglass")
-                        }
-                    }
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding([.top, .bottom], 5)
+            .padding(.leading, 5)
+
+            Spacer(minLength: 8)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .overlay {
-            RoundedRectangle(cornerRadius: 7)
-                .stroke(
-                    isPrivate ? OldSafariPalette.fieldBorderPrivate : OldSafariPalette.fieldBorder,
-                    lineWidth: 0.8
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(LinearGradient(oldOS: theme.progressGradient))
+                    .brightness(0.1)
+                    .opacity(showsPlate ? 1 : 0)
+
+                OldOSInnerShadow(
+                    shape: RoundedRectangle(cornerRadius: 6),
+                    fill: LinearGradient(
+                        gradient: Gradient(stops: [
+                            Gradient.Stop(color: .clear, location: stopLocation),
+                            Gradient.Stop(color: theme.fieldPlain, location: stopLocation)
+                        ]),
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    radius: 1.8,
+                    offset: CGPoint(x: 0, y: 1),
+                    intensity: 0.5
                 )
+            }
+        )
+        .oldOSStrokeRoundedRectangle(6, theme.fieldStroke, lineWidth: 0.65)
+        .padding(.leading, 2.5)
+        .padding(.trailing, 1)
+        .onReceive(tab.$estimatedProgress) { value in
+            guard showsPlate else { return }
+            withAnimation(.linear(duration: 0.2)) { progress = value }
         }
-        .shadow(color: .black.opacity(isPrivate ? 0.30 : 0.18), radius: 1, x: 0, y: 1)
-    }
-
-    private func syncFromWebView(force: Bool = false) {
-        guard force || !focused else { return }
-        text = tab.url?.absoluteString ?? ""
-    }
-
-    private func navigate() {
-        let input = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !input.isEmpty else {
-            focusedField.wrappedValue = nil
-            return
-        }
-
-        if let url = URL(string: input), let scheme = url.scheme, !scheme.isEmpty {
-            tab.load(url)
-        } else if !input.contains(" "), input.contains("."),
-                  let url = URL(string: "https://\(input)") {
-            tab.load(url)
-        } else {
-            let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            if let url = URL(string: "https://www.google.com/search?q=\(encoded)") {
-                tab.load(url)
+        .onReceive(tab.$isLoading) { loading in
+            if loading {
+                progress = 0
+                withAnimation(.linear(duration: 0.18)) { showsPlate = true }
+            } else {
+                withAnimation(.linear(duration: 0.22)) { progress = 1 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
+                    withAnimation(.linear(duration: 0.2)) { showsPlate = false }
+                }
             }
         }
-        focusedField.wrappedValue = nil
     }
 }

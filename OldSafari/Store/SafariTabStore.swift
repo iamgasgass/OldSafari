@@ -111,6 +111,10 @@ final class SafariTabStore: ObservableObject {
         bookmarks.remove(atOffsets: offsets)
     }
 
+    func removeBookmark(id: UUID) {
+        bookmarks.removeAll { $0.id == id }
+    }
+
     private func attachCallbacks(to tab: SafariTab) {
         tab.onFinishedLoading = { [weak self] finished in
             self?.recordHistoryIfNeeded(for: finished)
