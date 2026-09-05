@@ -24,6 +24,9 @@ struct SafariToolbar: View {
     var isEditingBookmarks: Bool = false
     var canCreateTab: Bool = true
     var bottomInset: CGFloat = 0
+    /// Extra breathing room so the 45pt button row never sits on top of the
+    /// home indicator / gesture area of recent iPhones.
+    var lift: CGFloat = 6
 
     var onBack: () -> Void = {}
     var onForward: () -> Void = {}
@@ -53,6 +56,7 @@ struct SafariToolbar: View {
                         OldOSToolBarButton(image: "NavBookmarks", action: onBookmarks)
                         OldOSToolBarButton(image: tabImage, action: onTabs)
                     }
+                    .padding([.leading, .trailing], 6)
                     .transition(.opacity)
 
                 case .tabs:
@@ -116,14 +120,13 @@ struct SafariToolbar: View {
             }
             .frame(height: 45)
 
-            if bottomInset > 0 {
-                Color.clear.frame(height: bottomInset)
-            }
+            Color.clear.frame(height: bottomInset + lift)
         }
         .background(
             VStack(spacing: 0) {
                 LinearGradient(oldOS: theme.toolbarGradient).frame(height: 45)
-                theme.toolbarGradient.last?.color ?? Color.black
+                (theme.toolbarGradient.last?.color ?? Color.black)
+                    .frame(height: bottomInset + lift)
             }
             .oldOSBorder(width: 1, edges: [.top], color: theme.barHairline)
         )

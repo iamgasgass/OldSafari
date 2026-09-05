@@ -21,7 +21,7 @@ struct SafariTabsView: View {
             let width = geometry.size.width
             let height = geometry.size.height
             let step = width * 0.70
-            let cardHeight = max(height - (topInset + 45 + bottomInset), 120)
+            let cardHeight = max(height - (topInset + 45 + 6 + bottomInset), 120)
 
             ZStack {
                 LinearGradient(oldOS: theme.tabsBackground).ignoresSafeArea()
@@ -34,7 +34,7 @@ struct SafariTabsView: View {
                             .zIndex(position == index ? 1 : 0)
                     }
                 }
-                .offset(y: (topInset - 45 - bottomInset) / 2)
+                .offset(y: (topInset - 45 - 6 - bottomInset) / 2)
 
                 VStack(spacing: 0) {
                     Spacer().frame(height: max(height * (1.0 / 9.0), topInset + 8))
@@ -61,7 +61,7 @@ struct SafariTabsView: View {
                                 .frame(width: 7.5, height: 7.5)
                         }
                     }
-                    .padding(.bottom, height * (1.5 / 9.0))
+                    .padding(.bottom, max(height * (1.5 / 9.0), 45 + bottomInset + 18))
                 }
                 .allowsHitTesting(false)
 

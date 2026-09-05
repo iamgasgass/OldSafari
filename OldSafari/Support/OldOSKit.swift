@@ -265,3 +265,59 @@ func oldOSHideKeyboard() {
         to: nil, from: nil, for: nil
     )
 }
+
+// MARK: - Safe area
+
+/// Reading the safe area from a `GeometryReader` that has already been told to
+/// ignore it returns zero, which pushed the chrome under the Dynamic Island.
+/// The window is the only reliable source, so it is queried directly and
+/// refreshed when the interface geometry changes.
+enum OldOSScreen {
+    static var safeArea: EdgeInsets {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+
+        guard let window = windows.first(where: { $0.isKeyWindow }) ?? windows.first else {
+            return EdgeInsets(top: 20, leading: 0, bottom: 0, trailing: 0)
+        }
+
+        let insets = window.safeAreaInsets
+        return EdgeInsets(
+            top: insets.top,
+            leading: insets.left,
+            bottom: insets.bottom,
+            trailing: insets.right
+        )
+    }
+}
+
+/// Keeps a live copy of the window safe area for views that draw edge to edge.
+final class OldOSSafeArea: ObservableObject {
+    @Published private(set) var insets: EdgeInsets = OldOSScreen.safeArea
+
+    private var observers: [NSObjectProtocol] = []
+
+    init() {
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            UIDevice.orientationDidChangeNotification,
+            UIApplication.didBecomeActiveNotification
+        ]
+
+        observers = names.map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.refresh()
+            }
+        }
+    }
+
+    deinit {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
+    func refresh() {
+        let latest = OldOSScreen.safeArea
+        if latest != insets { insets = latest }
+    }
+}

@@ -9,6 +9,10 @@ enum SafariSearchField: Hashable {
 /// OldOS `safari_title_bar`: page title on top, address field + Google capsule
 /// below, and a Cancel button that slides in from the trailing edge while
 /// either field is being edited.
+///
+/// The widths are computed from the live width instead of the 320pt iPhone 4
+/// grid OldOS was drawn against, so the two fields stretch across the whole
+/// display on modern devices while keeping the original proportions.
 struct SafariSearchRow: View {
     @ObservedObject var tab: SafariTab
     let theme: OldOSSafariTheme
@@ -19,6 +23,13 @@ struct SafariSearchRow: View {
 
     var onNavigate: (String) -> Void
     var onSearch: (String) -> Void
+
+    /// Outer margin of the field row.  Small enough to look edge to edge, wide
+    /// enough to clear the rounded display corners of recent iPhones.
+    private let sideMargin: CGFloat = 8
+    private let gap: CGFloat = 6
+    private let cancelWidth: CGFloat = 59
+    private let fieldHeight: CGFloat = 32
 
     private var isEditingAddress: Bool { editingField == .address }
     private var isEditingSearch: Bool { editingField == .search }
@@ -44,12 +55,15 @@ struct SafariSearchRow: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let available = max(geometry.size.width - sideMargin * 2, 200)
+            let editingWidth = available - cancelWidth - gap
+
             ZStack {
                 LinearGradient(oldOS: theme.barGradient)
                     .oldOSBorder(width: 1, edges: [.bottom], color: theme.barHairline)
                     .oldOSInnerShadowBottom(color: theme.barHighlight, radius: 0.025)
 
-                VStack(spacing: 0) {
+                VStack(spacing: 3) {
                     Spacer(minLength: 0)
 
                     Text(tab.title.isEmpty ? "Untitled" : tab.title)
@@ -59,7 +73,7 @@ struct SafariSearchRow: View {
                         .lineLimit(1)
                         .padding([.leading, .trailing], 24)
 
-                    HStack(spacing: 0) {
+                    HStack(spacing: gap) {
                         if !isEditingSearch {
                             SafariAddressBar(
                                 tab: tab,
@@ -68,7 +82,11 @@ struct SafariSearchRow: View {
                                 isEditing: addressEditingBinding,
                                 onSubmit: onNavigate
                             )
-                            .frame(width: isEditingAddress ? geometry.size.width - 76 : geometry.size.width * 2 / 3 - 15)
+                            .frame(
+                                width: isEditingAddress
+                                    ? editingWidth
+                                    : (available - gap) * 0.665
+                            )
                         }
 
                         if !isEditingAddress {
@@ -78,45 +96,48 @@ struct SafariSearchRow: View {
                                 isEditing: searchEditingBinding,
                                 onSubmit: onSearch
                             )
-                            .frame(width: isEditingSearch ? geometry.size.width - 76 : geometry.size.width * 1 / 3)
+                            .frame(
+                                width: isEditingSearch
+                                    ? editingWidth
+                                    : (available - gap) * 0.335
+                            )
                         }
 
                         if isEditing {
-                            Spacer().frame(width: 69)
+                            cancelButton
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
                         }
                     }
-                    .frame(height: 32)
+                    .frame(height: fieldHeight)
+                    .padding([.leading, .trailing], sideMargin)
 
                     Spacer(minLength: 0)
                 }
+                .padding(.bottom, 4)
             }
         }
-        .frame(height: 60)
-        .overlay(alignment: .bottomTrailing) {
-            if isEditing {
-                Button {
-                    withAnimation(.linear(duration: 0.22)) { editingField = nil }
-                    oldOSHideKeyboard()
-                } label: {
-                    Text("Cancel")
-                        .font(OldOSFont.bold(13.25))
-                        .foregroundColor(.white)
-                        .shadow(color: Color.black.opacity(0.75), radius: 1, x: 0, y: -0.25)
-                        .frame(width: 59, height: 32)
-                        .oldOSInnerShadowBackground(
-                            RoundedRectangle(cornerRadius: 5.5),
-                            oldOSButtonGradient(theme.neutralButton),
-                            radius: 0.8,
-                            offset: CGPoint(x: 0, y: 0.6),
-                            intensity: 0.7
-                        )
-                        .shadow(color: Color.white.opacity(0.28), radius: 0, x: 0, y: 0.8)
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 12)
-                .padding(.bottom, 8)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
+        .frame(height: 62)
+    }
+
+    private var cancelButton: some View {
+        Button {
+            withAnimation(.linear(duration: 0.22)) { editingField = nil }
+            oldOSHideKeyboard()
+        } label: {
+            Text("Cancel")
+                .font(OldOSFont.bold(13.25))
+                .foregroundColor(.white)
+                .shadow(color: Color.black.opacity(0.75), radius: 1, x: 0, y: -0.25)
+                .frame(width: cancelWidth, height: fieldHeight)
+                .oldOSInnerShadowBackground(
+                    RoundedRectangle(cornerRadius: 5.5),
+                    oldOSButtonGradient(theme.neutralButton),
+                    radius: 0.8,
+                    offset: CGPoint(x: 0, y: 0.6),
+                    intensity: 0.7
+                )
+                .shadow(color: Color.white.opacity(0.28), radius: 0, x: 0, y: 0.8)
         }
+        .buttonStyle(.plain)
     }
 }

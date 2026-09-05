@@ -6,6 +6,7 @@ import UIKit
 /// browser stays edge to edge instead of being letterboxed into a 320x480 frame.
 struct SafariRootView: View {
     @StateObject private var store = SafariTabStore()
+    @StateObject private var safeArea = OldOSSafeArea()
 
     @State private var showTabs = false
     @State private var showLibrary = false
@@ -13,6 +14,9 @@ struct SafariRootView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let topInset = max(geometry.safeAreaInsets.top, safeArea.insets.top)
+            let bottomInset = max(geometry.safeAreaInsets.bottom, safeArea.insets.bottom)
+
             ZStack {
                 theme.appBackground.ignoresSafeArea()
 
@@ -21,8 +25,8 @@ struct SafariRootView: View {
                         store: store,
                         tab: tab,
                         theme: theme,
-                        topInset: geometry.safeAreaInsets.top,
-                        bottomInset: geometry.safeAreaInsets.bottom,
+                        topInset: topInset,
+                        bottomInset: bottomInset,
                         showTabs: $showTabs,
                         showLibrary: $showLibrary,
                         showShare: $showShare
@@ -30,6 +34,7 @@ struct SafariRootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear { safeArea.refresh() }
         }
         .ignoresSafeArea()
         .statusBarHidden(false)
