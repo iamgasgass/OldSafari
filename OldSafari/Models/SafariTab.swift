@@ -2,10 +2,8 @@ import Combine
 import Foundation
 import WebKit
 
-/// One browser tab. Wraps a single `WKWebView` and republishes its
-/// KVO-observable properties (`title`, `url`, `isLoading`,
-/// `estimatedProgress`, `canGoBack`, `canGoForward`) as `@Published`
-/// values so SwiftUI views update live without any manual polling.
+/// One browser tab backed by a single WKWebView. WebKit remains the source
+/// of truth for navigation state; KVO/Combine republishes it to SwiftUI.
 final class SafariTab: Identifiable, ObservableObject, Equatable {
 
     let id = UUID()
@@ -22,17 +20,13 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
     @Published private(set) var isSecure: Bool = false
     @Published var isRequestingDesktopSite: Bool = false
 
-    /// Called once a top-level navigation finishes, so the tab store
-    /// can append a History entry without this type knowing about History.
     var onFinishedLoading: ((SafariTab) -> Void)?
 
     private var cancellables = Set<AnyCancellable>()
-    private static let mobileUserAgent =
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 " +
-        "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+
     private static let desktopUserAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
-        "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
     init(url: URL?, isPrivate: Bool) {
         self.isPrivate = isPrivate
@@ -40,11 +34,19 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = isPrivate ? .nonPersistent() : .default()
         configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = true
-        webView.customUserAgent = Self.mobileUserAgent
+
+        // Do not spoof a fixed historical iOS version. WebKit's native UA
+        // tracks the installed OS and prevents modern sites such as Google
+        // from serving incompatible markup or feature-detection results.
+        webView.customUserAgent = nil
+
         self.webView = webView
 
         observeWebView()
@@ -93,15 +95,17 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
             .sink { [weak self] loading in
                 guard let self else { return }
                 self.isLoading = loading
+
                 if !loading, self.url != nil {
                     self.onFinishedLoading?(self)
-                    NotificationCenter.default.post(name: .oldSafariURLChanged, object: nil)
+                    NotificationCenter.default.post(
+                        name: .oldSafariURLChanged,
+                        object: nil
+                    )
                 }
             }
             .store(in: &cancellables)
     }
-
-    // MARK: - Navigation
 
     func load(_ url: URL) {
         webView.load(URLRequest(url: url))
@@ -123,15 +127,12 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
         webView.goForward()
     }
 
-    /// Toggles between the mobile and desktop user agent, then reloads —
-    /// mirroring the modern Safari "Request Desktop Website" action.
     func toggleDesktopSite() {
         isRequestingDesktopSite.toggle()
-        webView.customUserAgent = isRequestingDesktopSite ? Self.desktopUserAgent : Self.mobileUserAgent
+        webView.customUserAgent = isRequestingDesktopSite ? Self.desktopUserAgent : nil
         webView.reload()
     }
 
-    /// Presents the system Find-on-Page UI (native since iOS 16).
     func findOnPage() {
         if #available(iOS 16.0, *) {
             webView.findInteraction?.presentFindNavigator(showingReplace: false)
