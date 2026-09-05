@@ -4,12 +4,34 @@ A standalone, modern-iOS-ready rebuild of the **Safari** app from
 [The OldOS Project](https://github.com/zzanehip/The-OldOS-Project) (v2.0.8),
 licensed by its original author under Creative Commons Attribution 4.0.
 
-The goal: keep the exact OldOS Safari look — the brushed blue-grey chrome,
+**Keep the exact OldOS Safari look** — the brushed blue-grey chrome,
 gloss address field, classic tab-count icon, bookmark/history glyphs — while
 running natively full-screen on current iPhones and iOS, with the features
 you'd expect from a modern browser.
 
 ## What's included
+
+**iOS 6 Buttons and Navigation Bar (Skeuomorphic):**
+- Dual-intensity metallic gradients for the top bar and bottom toolbar.
+- Physical-style buttons with rounded edges, inner shadows, and a glass-like reflection effect.
+- Full support for **Private Browsing (Dark Mode)** with a dark charcoal/midnight blue metallic finish for all bars, forms, and lists within the app.
+
+**iOS 6 URL Bar Loading Animation:**
+- Blue progress bar with a glossy finish integrated into the URL bar rectangle.
+- Reload/Stop button placed directly inside the web address text field.
+- SSL padlock icon for HTTPS sites.
+
+**Bookmarks & History Section:**
+- Interface featuring a tab selector and an iOS 6-style fabric/background finish.
+- "Done" button styled in glossy iOS 6 blue.
+- Local management of bookmarks and history with a clear/delete option.
+
+**ShareSheet (iOS 6 Action Sheet):**
+- Exact replica of the dark action sheet with rounded edges and a glossy glass look.
+- Glossy buttons for "Add to Bookmarks," "Copy Link," and "Cancel."
+
+**Tabs Manager:**
+- Thumbnail grid view and a button to directly activate Private Browsing.
 
 **Faithful to the original:**
 - Brushed metal gradient toolbar and gloss address field, pixel-matched to the
