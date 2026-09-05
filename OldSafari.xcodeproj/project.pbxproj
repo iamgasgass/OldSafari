@@ -467,7 +467,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.oldsafari.standalone;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iamgasgass.OldSafari;
 				PRODUCT_NAME = OldSafari;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;
@@ -495,7 +495,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.oldsafari.standalone;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iamgasgass.OldSafari;
 				PRODUCT_NAME = OldSafari;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;
