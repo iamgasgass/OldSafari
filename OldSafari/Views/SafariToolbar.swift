@@ -39,6 +39,11 @@ struct SafariToolbar: View {
     var onNewFolder: () -> Void = {}
     var onTogglePrivate: () -> Void = {}
 
+    /// Long press history previews for the two navigation arrows.
+    var backHistory: () -> [SafariNavigationItem] = { [] }
+    var forwardHistory: () -> [SafariNavigationItem] = { [] }
+    var onNavigateHistory: (SafariNavigationItem) -> Void = { _ in }
+
     private var tabImage: String {
         let clamped = min(max(tabCount, 1), 8)
         return clamped == 1 ? "NavTab" : "NavTab\(clamped)"
@@ -50,8 +55,21 @@ struct SafariToolbar: View {
                 switch mode {
                 case .browsing:
                     HStack(spacing: 0) {
-                        OldOSToolBarButton(image: "NavBack", enabled: canGoBack, action: onBack)
-                        OldOSToolBarButton(image: "NavForward", enabled: canGoForward, action: onForward)
+                        OldOSToolBarMenuButton(
+                            image: "NavBack",
+                            enabled: canGoBack,
+                            items: backHistory,
+                            onSelect: onNavigateHistory,
+                            action: onBack
+                        )
+
+                        OldOSToolBarMenuButton(
+                            image: "NavForward",
+                            enabled: canGoForward,
+                            items: forwardHistory,
+                            onSelect: onNavigateHistory,
+                            action: onForward
+                        )
                         OldOSToolBarButton(image: "NavAction", action: onShare)
                         OldOSToolBarButton(image: "NavBookmarks", action: onBookmarks)
                         OldOSToolBarButton(image: tabImage, action: onTabs)

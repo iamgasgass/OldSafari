@@ -29,6 +29,77 @@ struct OldOSToolBarButton: View {
     }
 }
 
+/// Same artwork as `OldOSToolBarButton`, but a long press opens the tab's
+/// back/forward list the way the current Safari does.  The menu itself is a
+/// stock UIKit menu, so it follows every system appearance setting.
+struct OldOSToolBarMenuButton: View {
+    let image: String
+    var enabled: Bool = true
+    var systemImage: String = "clock"
+    var items: () -> [SafariNavigationItem]
+    var onSelect: (SafariNavigationItem) -> Void
+    var action: () -> Void
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 0)
+
+            Menu {
+                ForEach(items()) { entry in
+                    Button {
+                        onSelect(entry)
+                    } label: {
+                        Label(entry.title, systemImage: systemImage)
+                    }
+                }
+            } label: {
+                Image(image)
+            } primaryAction: {
+                guard enabled else { return }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                action()
+            }
+            .buttonStyle(.plain)
+            .menuOrder(.fixed)
+            .allowsHitTesting(enabled)
+
+            Spacer(minLength: 0)
+        }
+        .opacity(enabled ? 1 : 0.25)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// The empty separator grid an iOS 6 plain UITableView drew under its last
+/// row, so short lists never end in a blank sheet of white.
+struct OldOSTableFiller: View {
+    let theme: OldOSSafariTheme
+    var rowHeight: CGFloat = 44
+    var separator: CGFloat = 0.95
+
+    var body: some View {
+        GeometryReader { geometry in
+            let rows = max(Int(ceil(geometry.size.height / rowHeight)) + 1, 1)
+
+            VStack(spacing: 0) {
+                ForEach(0..<rows, id: \.self) { _ in
+                    VStack(spacing: 0) {
+                        Rectangle()
+                            .fill(theme.listBackground)
+                            .frame(height: rowHeight - separator)
+                        Rectangle()
+                            .fill(theme.listSeparator)
+                            .frame(height: separator)
+                    }
+                }
+            }
+            .frame(height: geometry.size.height, alignment: .top)
+            .clipped()
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - Rectangle (pill) button
 
 /// OldOS `tool_bar_rectangle_button`: 32pt tall, 5.5pt radius, recessed bevel,

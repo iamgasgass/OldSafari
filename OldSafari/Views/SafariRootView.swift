@@ -131,7 +131,9 @@ private struct SafariSelectedTabView: View {
                 if tab.url == nil {
                     SafariStartPageView(store: store, tab: tab, theme: theme)
                 } else {
-                    SafariWebView(tab: tab)
+                    SafariWebView(tab: tab) { url in
+                        store.addTab(url: url)
+                    }
                 }
 
                 if editingField != nil {
@@ -161,7 +163,10 @@ private struct SafariSelectedTabView: View {
                 onForward: { tab.goForward() },
                 onShare: { withAnimation(.linear(duration: 0.25)) { showShare = true } },
                 onBookmarks: { withAnimation(.linear(duration: 0.25)) { showLibrary = true } },
-                onTabs: { withAnimation(.linear(duration: 0.25)) { showTabs = true } }
+                onTabs: { withAnimation(.linear(duration: 0.25)) { showTabs = true } },
+                backHistory: { tab.backItems },
+                forwardHistory: { tab.forwardItems },
+                onNavigateHistory: { entry in tab.go(to: entry) }
             )
             .zIndex(2)
         }

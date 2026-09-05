@@ -2,6 +2,15 @@ import Combine
 import Foundation
 import WebKit
 
+/// One entry of a tab's WebKit back/forward list, used by the long press
+/// history preview on the toolbar arrows.
+struct SafariNavigationItem: Identifiable {
+    let id = UUID()
+    let title: String
+    let host: String
+    let item: WKBackForwardListItem
+}
+
 /// One browser tab backed by a single WKWebView. WebKit remains the source
 /// of truth for navigation state; KVO/Combine republishes it to SwiftUI.
 final class SafariTab: Identifiable, ObservableObject, Equatable {
@@ -105,6 +114,29 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    /// Most recent first, like the modern Safari long press menu.
+    var backItems: [SafariNavigationItem] {
+        webView.backForwardList.backList.reversed().map(Self.navigationItem)
+    }
+
+    var forwardItems: [SafariNavigationItem] {
+        webView.backForwardList.forwardList.map(Self.navigationItem)
+    }
+
+    private static func navigationItem(_ item: WKBackForwardListItem) -> SafariNavigationItem {
+        let title = item.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let host = item.url.host ?? item.url.absoluteString
+        return SafariNavigationItem(
+            title: title.isEmpty ? host : title,
+            host: host,
+            item: item
+        )
+    }
+
+    func go(to entry: SafariNavigationItem) {
+        webView.go(to: entry.item)
     }
 
     func load(_ url: URL) {

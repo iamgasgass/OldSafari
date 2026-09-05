@@ -22,7 +22,8 @@ struct SafariLibraryView: View {
             theme.listBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Color.clear.frame(height: topInset)
+                LinearGradient(oldOS: theme.barGradient)
+                    .frame(height: topInset)
 
                 OldOSTitleBar(
                     title: showingHistory ? "History" : "Bookmarks",
@@ -137,7 +138,12 @@ struct SafariLibraryView: View {
                 emptyState(title: "No Bookmarks", subtitle: "Bookmarks you add appear here.")
             }
         }
-        .background(theme.listBackground)
+        .background(
+            ZStack {
+                theme.listBackground
+                OldOSTableFiller(theme: theme)
+            }
+        )
     }
 
     // MARK: History
@@ -202,7 +208,12 @@ struct SafariLibraryView: View {
                 }
             }
         }
-        .background(theme.listBackground)
+        .background(
+            ZStack {
+                theme.listBackground
+                OldOSTableFiller(theme: theme)
+            }
+        )
     }
 
     private func sectionHeader(_ label: String) -> some View {

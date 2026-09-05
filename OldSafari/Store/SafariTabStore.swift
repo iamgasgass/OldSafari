@@ -133,6 +133,12 @@ final class SafariTabStore: ObservableObject {
         }
 
         history.insert(SafariHistoryEntry(title: normalizedTitle, url: normalizedURL), at: 0)
+
+        // Keep the persisted list bounded: iOS 6 pruned History too, and this
+        // keeps the UserDefaults payload and the list rendering cheap.
+        if history.count > 400 {
+            history.removeLast(history.count - 400)
+        }
     }
 
     func removeHistory(at offsets: IndexSet, in group: [SafariHistoryEntry]) {

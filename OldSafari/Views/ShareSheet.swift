@@ -19,9 +19,18 @@ struct OldOSActionSheet: View {
     let theme: OldOSSafariTheme
     let buttons: [OldOSSheetButton]
     var cancelTitle: String = "Cancel"
-    var heightFraction: CGFloat = 0.58
+    /// Optional minimum height, kept for the sheets that were tuned by hand.
+    var heightFraction: CGFloat = 0
     var bottomInset: CGFloat = 0
     let onCancel: () -> Void
+
+    /// 30pt strip + 28pt top padding + 50pt rows + cancel button + insets.
+    private func sheetHeight(for available: CGFloat) -> CGFloat {
+        let rows = CGFloat(buttons.count)
+        let content = 30 + 18 + rows * 55 + 50 + 25 + bottomInset
+        let minimum = available * heightFraction
+        return min(max(content, minimum), available * 0.88)
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -49,7 +58,7 @@ struct OldOSActionSheet: View {
                                 destructive: button.destructive,
                                 action: button.action
                             )
-                            .padding(.top, index == 0 ? 28 : 2.5)
+                            .padding(.top, index == 0 ? 18 : 2.5)
                             .padding(.bottom, 2.5)
                         }
 
@@ -59,7 +68,7 @@ struct OldOSActionSheet: View {
                             .padding(.bottom, 25 + bottomInset)
                     }
                 }
-                .frame(height: geometry.size.height * heightFraction + bottomInset)
+                .frame(height: sheetHeight(for: geometry.size.height))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -127,7 +136,6 @@ struct OldOSActionSheet: View {
                     .fill(LinearGradient(oldOS: theme.shareCancelInner))
                     .oldOSAddBorder(LinearGradient(oldOS: theme.shareCancelBorder), width: 0.4, cornerRadius: 9)
                     .padding(3)
-                    .opacity(0.6)
 
                 Text(cancelTitle)
                     .font(OldOSFont.bold(18))
@@ -169,6 +177,11 @@ struct SafariActionsView: View {
                     OldOSSheetButton(title: "Add to Home Screen") {},
                     OldOSSheetButton(title: "Mail Link to this Page") { mailLink() },
                     OldOSSheetButton(title: "Copy") { copyLink() },
+                    OldOSSheetButton(title: "Find on Page") { findOnPage() },
+                    OldOSSheetButton(
+                        title: tab.isRequestingDesktopSite ? "Request Mobile Site" : "Request Desktop Site"
+                    ) { requestDesktopSite() },
+                    OldOSSheetButton(title: "Share\u{2026}") { systemShare() },
                     OldOSSheetButton(title: "Print") { printPage() }
                 ],
                 bottomInset: bottomInset,
@@ -215,6 +228,50 @@ struct SafariActionsView: View {
         onClose()
     }
 
+    private func findOnPage() {
+        onClose()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { tab.findOnPage() }
+    }
+
+    private func requestDesktopSite() {
+        tab.toggleDesktopSite()
+        onClose()
+    }
+
+    /// Hands the page to the stock iOS share sheet, so AirDrop, Messages,
+    /// Reading List and every share extension installed on the device work.
+    private func systemShare() {
+        guard let currentURL else { return }
+        onClose()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard
+                let scene = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene })
+                    .first(where: { $0.activationState == .foregroundActive }),
+                let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController
+            else { return }
+
+            var presenter = root
+            while let presented = presenter.presentedViewController {
+                presenter = presented
+            }
+
+            let controller = UIActivityViewController(
+                activityItems: [currentURL],
+                applicationActivities: nil
+            )
+            controller.popoverPresentationController?.sourceView = presenter.view
+            controller.popoverPresentationController?.sourceRect = CGRect(
+                x: presenter.view.bounds.midX,
+                y: presenter.view.bounds.maxY - 60,
+                width: 1,
+                height: 1
+            )
+            presenter.present(controller, animated: true)
+        }
+    }
+
     private func printPage() {
         let controller = UIPrintInteractionController.shared
         let info = UIPrintInfo(dictionary: nil)
@@ -240,7 +297,8 @@ struct SafariAddBookmarkView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Color.clear.frame(height: topInset)
+            LinearGradient(oldOS: theme.barGradient)
+                .frame(height: topInset)
 
             ZStack {
                 theme.groupedBackground

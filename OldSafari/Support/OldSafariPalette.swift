@@ -180,15 +180,15 @@ struct OldOSSafariTheme {
         sectionHeader: .oldOS(76, 86, 108),
 
         shareStrip: [
-            OldOSStop(.oldOS(166, 171, 179, 0.88), 0),
-            OldOSStop(.oldOS(122, 127, 138, 0.88), 1)
+            OldOSStop(.oldOS(74, 76, 80, 0.92), 0),
+            OldOSStop(.oldOS(46, 48, 52, 0.92), 1)
         ],
         shareBody: [
-            OldOSStop(.oldOS(96, 101, 111, 0.88), 0),
-            OldOSStop(.oldOS(96, 101, 111, 0.90), 1)
+            OldOSStop(.oldOS(28, 29, 32, 0.93), 0),
+            OldOSStop(.oldOS(28, 29, 32, 0.95), 1)
         ],
-        shareButtonBase: .oldOS(70, 73, 81),
-        shareButtonOuterStroke: [.oldOS(83, 83, 83), .oldOS(143, 143, 143)],
+        shareButtonBase: .oldOS(24, 25, 28),
+        shareButtonOuterStroke: [.oldOS(70, 70, 70), .oldOS(120, 120, 120)],
         shareButtonInner: [
             OldOSStop(.oldOS(235, 235, 236), 0),
             OldOSStop(.oldOS(208, 209, 211), 0.52),
@@ -200,12 +200,12 @@ struct OldOSSafariTheme {
         shareButtonTextShadow: Color.white.opacity(0.9),
         shareButtonTextShadowY: 0.9,
         shareCancelInner: [
-            OldOSStop(.oldOS(107, 113, 119), 0),
-            OldOSStop(.oldOS(53, 62, 69), 0.50),
-            OldOSStop(.oldOS(41, 48, 57), 0.50),
-            OldOSStop(.oldOS(56, 62, 71), 1)
+            OldOSStop(.oldOS(239, 135, 142), 0),
+            OldOSStop(.oldOS(199, 52, 63), 0.48),
+            OldOSStop(.oldOS(189, 20, 33), 0.49),
+            OldOSStop(.oldOS(189, 20, 33), 1)
         ],
-        shareCancelBorder: [Color.gray.opacity(0.9), Color.gray.opacity(0.35)],
+        shareCancelBorder: [Color.white.opacity(0.55), Color.black.opacity(0.35)],
 
         tabsBackground: [.oldOS(149, 161, 172), .oldOS(85, 105, 121)],
         tabTitle: .white,
@@ -296,12 +296,12 @@ struct OldOSSafariTheme {
         shareButtonTextShadow: Color.black.opacity(0.9),
         shareButtonTextShadowY: -0.9,
         shareCancelInner: [
-            OldOSStop(.oldOS(72, 74, 78), 0),
-            OldOSStop(.oldOS(34, 36, 40), 0.50),
-            OldOSStop(.oldOS(26, 28, 32), 0.50),
-            OldOSStop(.oldOS(34, 36, 40), 1)
+            OldOSStop(.oldOS(239, 135, 142), 0),
+            OldOSStop(.oldOS(199, 52, 63), 0.48),
+            OldOSStop(.oldOS(189, 20, 33), 0.49),
+            OldOSStop(.oldOS(189, 20, 33), 1)
         ],
-        shareCancelBorder: [Color.white.opacity(0.28), Color.white.opacity(0.08)],
+        shareCancelBorder: [Color.white.opacity(0.55), Color.black.opacity(0.35)],
 
         tabsBackground: [.oldOS(74, 76, 80), .oldOS(20, 21, 24)],
         tabTitle: .white,

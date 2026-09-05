@@ -25,20 +25,38 @@ struct SafariAddressBar: View {
         CGFloat(min(max(progress, 0), 1))
     }
 
+    /// While the field is idle WebKit is the single source of truth, so the
+    /// address always reflects the page that is actually on screen (redirects,
+    /// in page navigation, back/forward, swipe gestures).  As soon as editing
+    /// starts the local buffer takes over.
+    private var liveURL: String { tab.url?.absoluteString ?? "" }
+
+    private var displayed: Binding<String> {
+        Binding(
+            get: { isEditing ? text : liveURL },
+            set: { text = $0 }
+        )
+    }
+
+    private var isEmptyField: Bool {
+        isEditing ? text.isEmpty : liveURL.isEmpty
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             Spacer(minLength: 5)
 
             HStack(alignment: .center, spacing: 10) {
                 ZStack(alignment: .leading) {
-                    if text.isEmpty && !isEditing {
+                    if isEmptyField && !isEditing {
                         Text("Address")
                             .font(OldOSFont.regular(15))
                             .foregroundColor(theme.fieldPlaceholder)
                             .allowsHitTesting(false)
                     }
 
-                    TextField("", text: $text, onEditingChanged: { changed in
+                    TextField("", text: displayed, onEditingChanged: { changed in
+                        if changed { text = liveURL }
                         withAnimation(.linear(duration: 0.22)) { isEditing = changed }
                     })
                     .font(OldOSFont.regular(15))
@@ -65,12 +83,25 @@ struct SafariAddressBar: View {
                     .fixedSize()
                 }
 
+                if !isEditing, tab.isSecure {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(theme.fieldTextIdle)
+                }
+
                 if !isEditing {
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         if tab.isLoading { tab.stop() } else { tab.reload() }
                     } label: {
-                        Image("AddressViewReload")
+                        if tab.isLoading {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(theme.fieldTextIdle)
+                                .frame(width: 20, height: 20)
+                        } else {
+                            Image("AddressViewReload")
+                        }
                     }
                     .buttonStyle(.plain)
                 }
