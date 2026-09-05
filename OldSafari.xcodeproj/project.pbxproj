@@ -75,6 +75,14 @@
 			isa = PBXBuildFile;
 			fileRef = 997C16FA280E4D31B3076B59 /* ShareSheet.swift */;
 		};
+		1A2B3C4D5E6F708192A3B4C5 /* SafariSearchRow.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 2A3B4C5D6E7F8091A2B3C4D5 /* SafariSearchRow.swift */;
+		};
+		3B4C5D6E7F8091A2B3C4D5E6 /* SafariGoogleSearchBar.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = 4C5D6E7F8091A2B3C4D5E6F7 /* SafariGoogleSearchBar.swift */;
+		};
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -211,6 +219,20 @@
 			sourceTree = "<group>";
 		};
 
+		2A3B4C5D6E7F8091A2B3C4D5 /* SafariSearchRow.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariSearchRow.swift;
+			sourceTree = "<group>";
+		};
+
+		4C5D6E7F8091A2B3C4D5E6F7 /* SafariGoogleSearchBar.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariGoogleSearchBar.swift;
+			sourceTree = "<group>";
+		};
+
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -307,6 +329,8 @@
 				153D79A591484113875E6AB6 /* SafariToolbar.swift */,
 				8D4B21A2F2AB4E2E9AA2B68B /* SafariWebView.swift */,
 				997C16FA280E4D31B3076B59 /* ShareSheet.swift */,
+				2A3B4C5D6E7F8091A2B3C4D5 /* SafariSearchRow.swift */,
+				4C5D6E7F8091A2B3C4D5E6F7 /* SafariGoogleSearchBar.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -391,6 +415,8 @@
 				901B47BBB0C545D290333A09 /* SafariToolbar.swift in Sources */,
 				6516E1930C614E969795E7BE /* SafariWebView.swift in Sources */,
 				54FD8A77A3E647768CBD4B93 /* ShareSheet.swift in Sources */,
+				1A2B3C4D5E6F708192A3B4C5 /* SafariSearchRow.swift in Sources */,
+				3B4C5D6E7F8091A2B3C4D5E6 /* SafariGoogleSearchBar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
