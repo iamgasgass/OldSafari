@@ -5,10 +5,7 @@ struct SafariTabsView: View {
     @ObservedObject var store: SafariTabStore
     @Environment(\.dismiss) private var dismiss
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14)
-    ]
+    private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
 
     var body: some View {
         NavigationStack {
@@ -18,17 +15,13 @@ struct SafariTabsView: View {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 14) {
                         ForEach(store.visibleTabs) { tab in
-                            SafariTabCard(
-                                tab: tab,
-                                onSelect: {
-                                    store.select(tab)
-                                    dismiss()
-                                },
-                                onClose: {
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                    store.close(tab)
-                                }
-                            )
+                            SafariTabCard(tab: tab) {
+                                store.select(tab)
+                                dismiss()
+                            } onClose: {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                store.close(tab)
+                            }
                         }
                     }
                     .padding(16)
@@ -63,7 +56,6 @@ struct SafariTabsView: View {
                         )
                     }
                 }
-
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
@@ -90,62 +82,53 @@ private struct SafariTabCard: View {
     let onClose: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Button(action: onSelect) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text(tab.title.isEmpty ? "Untitled" : tab.title)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-
-                        Spacer(minLength: 28)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-
-                    Text(tab.url?.host ?? "About Blank")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.75))
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text(tab.title.isEmpty ? "Untitled" : tab.title)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
                         .lineLimit(1)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 2)
-
-                    Spacer(minLength: 8)
-
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.white.opacity(0.08))
-                        .frame(height: 68)
-                        .overlay(
-                            Image(systemName: tab.isPrivate ? "eyeglasses" : "globe")
-                                .font(.system(size: 22))
-                                .foregroundStyle(.white.opacity(0.5))
-                        )
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, 10)
+                    Spacer(minLength: 4)
+                    Button(action: onClose) {
+                        Image("closebox")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .frame(maxWidth: .infinity, minHeight: 130)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.black.opacity(0.24))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
 
-            Button(action: onClose) {
-                Image("closebox")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
+                Text(tab.url?.host ?? "About Blank")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 2)
+
+                Spacer(minLength: 8)
+
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(0.08))
+                    .frame(height: 68)
+                    .overlay(
+                        Image(systemName: tab.isPrivate ? "eyeglasses" : "globe")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white.opacity(0.5))
+                    )
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 10)
             }
-            .buttonStyle(.plain)
-            .padding(.top, 5)
-            .padding(.trailing, 5)
+            .frame(maxWidth: .infinity, minHeight: 130)
+            .background(
+                RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.24))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.25), lineWidth: 1)
+            )
         }
+        .buttonStyle(.plain)
     }
 }

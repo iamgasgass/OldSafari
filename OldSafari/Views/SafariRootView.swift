@@ -11,28 +11,27 @@ struct SafariRootView: View {
         GeometryReader { geometry in
             if let tab = store.selected {
                 ZStack(alignment: .top) {
-                    // Web content is edge-to-edge. The classic Safari chrome
-                    // floats above it, while safe-area insets are consumed only
-                    // by the chrome so the home indicator never covers controls.
                     pageContent(for: tab)
-                        .ignoresSafeArea()
+                        .ignoresSafeArea(edges: .bottom)
 
                     VStack(spacing: 0) {
                         chrome(for: tab, topInset: geometry.safeAreaInsets.top)
-
                         Spacer(minLength: 0)
-
                         SafariToolbar(
                             tab: tab,
                             isPrivate: tab.isPrivate,
                             tabCount: store.visibleTabs.count,
-                            bottomInset: geometry.safeAreaInsets.bottom,
                             onTabs: { showTabs = true },
                             onLibrary: { showLibrary = true },
                             onShare: { showShare = true }
                         )
+                        .padding(.bottom, geometry.safeAreaInsets.bottom)
+                        .background(
+                            (tab.isPrivate ? OldSafariPalette.chromeBottomPrivate : OldSafariPalette.chromeBottom)
+                                .ignoresSafeArea(edges: .bottom)
+                        )
                     }
-                    .ignoresSafeArea()
+                    .ignoresSafeArea(edges: [.top, .bottom])
                 }
                 .preferredColorScheme(tab.isPrivate ? .dark : .light)
             } else {
@@ -41,10 +40,9 @@ struct SafariRootView: View {
                     .background(Color(.systemBackground))
             }
         }
+        .ignoresSafeArea(edges: .bottom)
         .sheet(isPresented: $showTabs) {
-            SafariTabsView(store: store)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+            SafariTabsView(store: store).presentationDetents([.large])
         }
         .sheet(isPresented: $showLibrary) {
             SafariLibraryView(store: store, currentTab: store.selected)
@@ -72,18 +70,8 @@ struct SafariRootView: View {
             SafariProgressBar(progress: tab.estimatedProgress, isLoading: tab.isLoading)
         }
         .background(
-            chromeGradient(isPrivate: tab.isPrivate)
+            (tab.isPrivate ? OldSafariPalette.chromeTopPrivate : OldSafariPalette.chromeTop)
                 .ignoresSafeArea(edges: .top)
-        )
-    }
-
-    private func chromeGradient(isPrivate: Bool) -> LinearGradient {
-        LinearGradient(
-            colors: isPrivate
-                ? [OldSafariPalette.chromeTopPrivate, OldSafariPalette.chromeBottomPrivate]
-                : [OldSafariPalette.chromeTop, OldSafariPalette.chromeBottom],
-            startPoint: .top,
-            endPoint: .bottom
         )
     }
 }
