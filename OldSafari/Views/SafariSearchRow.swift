@@ -63,7 +63,7 @@ struct SafariSearchRow: View {
                     .oldOSBorder(width: 1, edges: [.bottom], color: theme.barHairline)
                     .oldOSInnerShadowBottom(color: theme.barHighlight, radius: 0.025)
 
-                VStack(spacing: 3) {
+                VStack(spacing: 6) {
                     Spacer(minLength: 0)
 
                     Text(tab.title.isEmpty ? "Untitled" : tab.title)
@@ -113,10 +113,10 @@ struct SafariSearchRow: View {
 
                     Spacer(minLength: 0)
                 }
-                .padding(.bottom, 4)
+                .padding(.bottom, 5)
             }
         }
-        .frame(height: 62)
+        .frame(height: 68)
     }
 
     private var cancelButton: some View {

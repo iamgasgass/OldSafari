@@ -18,11 +18,11 @@ struct SafariAddressBar: View {
 
     var onSubmit: (String) -> Void
 
-    @State private var progress: Double = 1
+    @State private var progress: Double = 0
     @State private var showsPlate: Bool = false
 
-    private var stopLocation: CGFloat {
-        CGFloat(min(max(showsPlate ? progress : 1, 0), 1))
+    private var clampedProgress: CGFloat {
+        CGFloat(min(max(progress, 0), 1))
     }
 
     var body: some View {
@@ -82,21 +82,22 @@ struct SafariAddressBar: View {
         }
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(LinearGradient(oldOS: theme.progressGradient))
-                    .brightness(0.1)
-                    .opacity(showsPlate ? 1 : 0)
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Rectangle().fill(theme.fieldFill)
+
+                        if showsPlate {
+                            LinearGradient(oldOS: theme.progressGradient)
+                                .brightness(0.1)
+                                .frame(width: geometry.size.width * clampedProgress)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
 
                 OldOSInnerShadow(
                     shape: RoundedRectangle(cornerRadius: 6),
-                    fill: LinearGradient(
-                        gradient: Gradient(stops: [
-                            Gradient.Stop(color: .clear, location: stopLocation),
-                            Gradient.Stop(color: theme.fieldPlain, location: stopLocation)
-                        ]),
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
+                    fill: Color.clear,
                     radius: 1.8,
                     offset: CGPoint(x: 0, y: 1),
                     intensity: 0.5
@@ -112,7 +113,7 @@ struct SafariAddressBar: View {
         }
         .onReceive(tab.$isLoading) { loading in
             if loading {
-                progress = 0
+                progress = 0.06
                 withAnimation(.linear(duration: 0.18)) { showsPlate = true }
             } else {
                 withAnimation(.linear(duration: 0.22)) { progress = 1 }

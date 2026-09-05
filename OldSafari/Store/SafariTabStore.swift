@@ -140,6 +140,10 @@ final class SafariTabStore: ObservableObject {
         history.removeAll { idsToRemove.contains($0.id) }
     }
 
+    func removeHistory(id: UUID) {
+        history.removeAll { $0.id == id }
+    }
+
     func clearHistory() {
         history.removeAll()
     }

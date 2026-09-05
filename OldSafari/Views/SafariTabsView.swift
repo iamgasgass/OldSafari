@@ -28,10 +28,12 @@ struct SafariTabsView: View {
 
                 ZStack {
                     ForEach(Array(tabs.enumerated()), id: \.element.id) { position, tab in
-                        card(tab: tab, position: position, width: width, height: cardHeight)
+                        let distance = abs(CGFloat(position - index) + drag / max(step, 1))
+
+                        card(tab: tab, position: position, width: width, height: cardHeight, live: distance < 1.4)
                             .offset(x: CGFloat(position - index) * step + drag)
-                            .opacity(position == index ? 1 : 0.2)
-                            .zIndex(position == index ? 1 : 0)
+                            .opacity(Double(max(0.2, 1 - distance * 0.8)))
+                            .zIndex(distance < 0.5 ? 1 : 0)
                     }
                 }
                 .offset(y: (topInset - 45 - 6 - bottomInset) / 2)
@@ -95,10 +97,18 @@ struct SafariTabsView: View {
             .contentShape(Rectangle())
             .gesture(
                 DragGesture()
-                    .onChanged { value in drag = value.translation.width }
+                    .onChanged { value in
+                        let raw = value.translation.width
+                        let atStart = index == 0 && raw > 0
+                        let atEnd = index == tabs.count - 1 && raw < 0
+                        drag = (atStart || atEnd) ? raw * 0.32 : raw
+                    }
                     .onEnded { value in
                         let threshold = step / 3
-                        withAnimation(.linear(duration: 0.25)) {
+                        if abs(value.translation.width) > threshold {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
+                        withAnimation(.interpolatingSpring(stiffness: 190, damping: 24)) {
                             if value.translation.width < -threshold, index < tabs.count - 1 {
                                 index += 1
                             } else if value.translation.width > threshold, index > 0 {
@@ -116,13 +126,17 @@ struct SafariTabsView: View {
 
     // MARK: Card
 
-    private func card(tab: SafariTab, position: Int, width: CGFloat, height: CGFloat) -> some View {
+    private func card(tab: SafariTab, position: Int, width: CGFloat, height: CGFloat, live: Bool) -> some View {
         ZStack {
             Group {
                 if tab.url == nil {
                     SafariStartPageView(store: store, tab: tab, theme: theme)
-                } else {
+                } else if live {
+                    // Only the visible neighbours keep a live web view attached,
+                    // the rest fall back to a cheap placeholder.
                     SafariWebView(tab: tab)
+                } else {
+                    theme.pageBackground
                 }
             }
             .frame(width: width, height: height)

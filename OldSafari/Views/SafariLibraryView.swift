@@ -13,6 +13,8 @@ struct SafariLibraryView: View {
     @State private var showingHistory = false
     @State private var isEditing = false
     @State private var armedBookmark: UUID?
+    @State private var isEditingHistory = false
+    @State private var armedHistory: UUID?
     @State private var confirmClear = false
 
     var body: some View {
@@ -27,7 +29,11 @@ struct SafariLibraryView: View {
                     theme: theme,
                     leading: showingHistory
                         ? OldOSBarButton("Bookmarks", type: theme.secondaryButton) {
-                            withAnimation(.linear(duration: 0.22)) { showingHistory = false }
+                            withAnimation(.linear(duration: 0.22)) {
+                                showingHistory = false
+                                isEditingHistory = false
+                                armedHistory = nil
+                            }
                         }
                         : nil,
                     trailing: isEditing
@@ -101,6 +107,18 @@ struct SafariLibraryView: View {
                         }
                     }
                 )
+                .gesture(
+                    DragGesture(minimumDistance: 24, coordinateSpace: .local)
+                        .onEnded { value in
+                            guard value.translation.width < -30,
+                                  abs(value.translation.height) < 30 else { return }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            withAnimation(.linear(duration: 0.18)) {
+                                isEditing = true
+                                armedBookmark = bookmark.id
+                            }
+                        }
+                )
                 .overlay(alignment: .trailing) {
                     if isEditing, armedBookmark == bookmark.id {
                         OldOSRectangleButton(title: "Delete", type: .red) {
@@ -137,9 +155,48 @@ struct SafariLibraryView: View {
                             icon: "Bookmark",
                             title: entry.title.isEmpty ? entry.url : entry.title,
                             detail: entry.url,
-                            theme: theme
-                        ) {
-                            open(entry.url)
+                            theme: theme,
+                            showsChevron: false,
+                            action: {
+                                guard !isEditingHistory else { return }
+                                open(entry.url)
+                            },
+                            accessory: {
+                                HStack(spacing: 0) {
+                                    if isEditingHistory {
+                                        OldOSRemoveControl(armed: armedHistory == entry.id) {
+                                            withAnimation(.linear(duration: 0.15)) {
+                                                armedHistory = armedHistory == entry.id ? nil : entry.id
+                                            }
+                                        }
+                                        .transition(.move(edge: .leading).combined(with: .opacity))
+                                    }
+                                }
+                            }
+                        )
+                        .gesture(
+                            DragGesture(minimumDistance: 24, coordinateSpace: .local)
+                                .onEnded { value in
+                                    guard value.translation.width < -30,
+                                          abs(value.translation.height) < 30 else { return }
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    withAnimation(.linear(duration: 0.18)) {
+                                        isEditingHistory = true
+                                        armedHistory = entry.id
+                                    }
+                                }
+                        )
+                        .overlay(alignment: .trailing) {
+                            if isEditingHistory, armedHistory == entry.id {
+                                OldOSRectangleButton(title: "Delete", type: .red) {
+                                    withAnimation(.linear(duration: 0.2)) {
+                                        store.removeHistory(id: entry.id)
+                                        armedHistory = nil
+                                    }
+                                }
+                                .padding(.trailing, 12)
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                            }
                         }
                     }
                 }
@@ -191,7 +248,17 @@ struct SafariLibraryView: View {
                             : OldOSBarButton(" Clear ", type: theme.secondaryButton) {
                                 withAnimation(.linear(duration: 0.2)) { confirmClear = true }
                             },
-                        trailing: nil
+                        trailing: store.history.isEmpty
+                            ? nil
+                            : OldOSBarButton(
+                                isEditingHistory ? " Done " : "  Edit  ",
+                                type: isEditingHistory ? .blue : theme.secondaryButton
+                            ) {
+                                withAnimation(.linear(duration: 0.2)) {
+                                    isEditingHistory.toggle()
+                                    armedHistory = nil
+                                }
+                            }
                     ),
                     isPrivate: store.isPrivateMode,
                     bottomInset: bottomInset

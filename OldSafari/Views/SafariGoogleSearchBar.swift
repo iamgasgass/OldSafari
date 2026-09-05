@@ -30,7 +30,7 @@ struct SafariGoogleSearchBar: View {
                     .font(OldOSFont.regular(15))
                     .foregroundColor(isEditing ? theme.fieldTextActive : theme.fieldTextIdle)
                     .keyboardType(.webSearch)
-                    .disableAutocorrection(true)
+                    .textInputAutocapitalization(.never)
                     .submitLabel(.search)
                     .onSubmit {
                         onSubmit(text)

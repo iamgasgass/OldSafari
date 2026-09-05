@@ -14,6 +14,13 @@ struct SafariWebView: UIViewRepresentable {
             webView.isFindInteractionEnabled = true
         }
 
+        // Swipe navigation and interactive keyboard dismissal make the browser
+        // feel native on modern hardware without touching the iOS 6 chrome.
+        webView.allowsBackForwardNavigationGestures = true
+        webView.allowsLinkPreview = true
+        webView.scrollView.keyboardDismissMode = .interactive
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+
         return webView
     }
 

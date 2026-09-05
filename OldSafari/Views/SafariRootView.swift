@@ -38,7 +38,6 @@ struct SafariRootView: View {
         }
         .ignoresSafeArea()
         .statusBarHidden(false)
-        .preferredColorScheme(store.isPrivateMode ? .dark : .light)
     }
 
     private var theme: OldOSSafariTheme {
