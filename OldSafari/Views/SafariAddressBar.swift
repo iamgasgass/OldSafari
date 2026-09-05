@@ -1,121 +1,81 @@
 import SwiftUI
 import Combine
 
-/// iOS 6 / OldOS-style address field.
-///
-/// The loading indicator is deliberately part of the address field itself:
-/// WebKit progress grows from the left edge to the right edge of the same
-/// rounded chrome, rather than occupying a separate row below it.
+/// OldOS/iOS 6-inspired address field.  The loading treatment deliberately
+/// stays restrained: a thin blue progress sweep along the lower edge of the
+/// field, plus the original stop/reload control.  This avoids the modern
+/// shimmer effect and keeps the chrome visually close to legacy Safari.
 struct SafariAddressBar: View {
     @ObservedObject var tab: SafariTab
     let isPrivate: Bool
     var focusedField: FocusState<SafariSearchField?>.Binding
 
     @State private var text = ""
-    @State private var shimmer = false
 
     private var focused: Bool { focusedField.wrappedValue == .address }
-
-    private var progress: CGFloat {
-        CGFloat(max(0, min(tab.estimatedProgress, 1)))
-    }
+    private var progress: CGFloat { CGFloat(max(0, min(tab.estimatedProgress, 1))) }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            fieldBackground
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(
+                colors: isPrivate
+                    ? [OldSafariPalette.fieldTopPrivate, OldSafariPalette.fieldBottomPrivate]
+                    : [OldSafariPalette.fieldTop, OldSafariPalette.fieldBottom],
+                startPoint: .top, endPoint: .bottom
+            )
 
-            // The real WebKit progress fills the complete address field.
-            // It is clipped by the same rounded shape as the field, so the
-            // animation never appears underneath or outside the URL bar.
+            // Legacy Safari-style progress: no shimmer, no extra row.
             if tab.isLoading {
-                GeometryReader { geometry in
+                GeometryReader { proxy in
                     ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.black.opacity(isPrivate ? 0.38 : 0.16))
+                            .frame(height: 2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
                         Rectangle()
                             .fill(
                                 LinearGradient(
                                     colors: isPrivate
-                                        ? [
-                                            Color(red: 0.10, green: 0.30, blue: 0.62),
-                                            Color(red: 0.18, green: 0.48, blue: 0.86),
-                                            Color(red: 0.08, green: 0.27, blue: 0.58)
-                                          ]
-                                        : [
-                                            Color(red: 0.08, green: 0.38, blue: 0.88),
-                                            Color(red: 0.28, green: 0.68, blue: 1.00),
-                                            Color(red: 0.05, green: 0.31, blue: 0.80)
-                                          ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
+                                        ? [Color(red: 0.18, green: 0.40, blue: 0.82),
+                                           Color(red: 0.34, green: 0.60, blue: 1.00)]
+                                        : [Color(red: 0.12, green: 0.38, blue: 0.86),
+                                           Color(red: 0.34, green: 0.66, blue: 1.00)],
+                                    startPoint: .top, endPoint: .bottom
                                 )
                             )
-                            .frame(width: geometry.size.width * progress)
-                            .animation(.linear(duration: 0.12), value: progress)
-
-                        if progress > 0.01 {
-                            Rectangle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            .clear,
-                                            .white.opacity(0.12),
-                                            .white.opacity(0.62),
-                                            .white.opacity(0.12),
-                                            .clear
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: max(28, geometry.size.width * 0.18))
-                                .offset(
-                                    x: shimmer
-                                        ? geometry.size.width * progress
-                                        : -geometry.size.width * 0.18
-                                )
-                                .animation(
-                                    .linear(duration: 0.75)
-                                        .repeatForever(autoreverses: false),
-                                    value: shimmer
-                                )
-                        }
+                            .frame(width: max(2, proxy.size.width * progress), height: 2)
+                            .animation(.easeOut(duration: 0.16), value: progress)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
                 }
                 .allowsHitTesting(false)
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 if !focused, tab.isSecure {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(isPrivate ? .white.opacity(0.8) : .secondary)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(isPrivate ? .white.opacity(0.82) : .secondary)
                 }
 
                 TextField("Address", text: $text)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15, weight: .regular))
-                    .foregroundColor(fieldTextColor)
+                    .foregroundStyle(isPrivate ? Color.white : Color.black)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
                     .focused(focusedField, equals: .address)
                     .submitLabel(.go)
                     .multilineTextAlignment(focused ? .leading : .center)
-                    .onSubmit { navigate() }
-                    .onAppear {
-                        syncFromWebView(force: true)
-                        updateShimmer(tab.isLoading)
-                    }
+                    .onSubmit(navigate)
+                    .onAppear { syncFromWebView(force: true) }
                     .onReceive(tab.$url) { _ in
                         if !focused { syncFromWebView(force: true) }
                     }
-                    .onReceive(tab.$isLoading) { loading in
-                        updateShimmer(loading)
-                    }
                     .onChange(of: focusedField.wrappedValue) { newValue in
-                        if newValue != .address {
-                            syncFromWebView(force: true)
-                        }
+                        if newValue != .address { syncFromWebView(force: true) }
                     }
 
                 if focused && !text.isEmpty {
@@ -128,29 +88,24 @@ struct SafariAddressBar: View {
                     Button {
                         if tab.isLoading { tab.stop() } else { tab.reload() }
                     } label: {
-                        if tab.isLoading {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(
-                                    isPrivate
-                                        ? .white.opacity(0.85)
-                                        : OldSafariPalette.placeholderText
-                                )
-                                .frame(width: 17, height: 17)
-                        } else {
-                            Image("AddressViewReload")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 17, height: 17)
+                        Group {
+                            if tab.isLoading {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 11, weight: .bold))
+                            } else {
+                                Image("AddressViewReload")
+                                    .resizable()
+                                    .scaledToFit()
+                            }
                         }
+                        .frame(width: 17, height: 17)
+                        .foregroundStyle(isPrivate ? .white.opacity(0.86) : OldSafariPalette.placeholderText)
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
                         Button { tab.toggleDesktopSite() } label: {
                             Label(
-                                tab.isRequestingDesktopSite
-                                    ? "Request Mobile Website"
-                                    : "Request Desktop Website",
+                                tab.isRequestingDesktopSite ? "Request Mobile Website" : "Request Desktop Website",
                                 systemImage: "display"
                             )
                         }
@@ -167,45 +122,11 @@ struct SafariAddressBar: View {
         .overlay {
             RoundedRectangle(cornerRadius: 7)
                 .stroke(
-                    tab.isLoading
-                        ? (isPrivate
-                            ? Color.white.opacity(0.72)
-                            : Color(red: 0.12, green: 0.42, blue: 0.90).opacity(0.82))
-                        : (isPrivate
-                            ? OldSafariPalette.fieldBorderPrivate
-                            : OldSafariPalette.fieldBorder),
-                    lineWidth: tab.isLoading ? 1.0 : 0.8
+                    isPrivate ? OldSafariPalette.fieldBorderPrivate : OldSafariPalette.fieldBorder,
+                    lineWidth: 0.8
                 )
         }
-        .id("address-\\(tab.id.uuidString)")
-    }
-
-    private var fieldBackground: some View {
-        LinearGradient(
-            colors: isPrivate
-                ? [OldSafariPalette.fieldTopPrivate, OldSafariPalette.fieldBottomPrivate]
-                : [OldSafariPalette.fieldTop, OldSafariPalette.fieldBottom],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    private var fieldTextColor: Color {
-        if focused {
-            return isPrivate ? .white : .black
-        }
-        return isPrivate ? .white.opacity(0.90) : OldSafariPalette.placeholderText
-    }
-
-    private func updateShimmer(_ loading: Bool) {
-        if loading {
-            shimmer = false
-            DispatchQueue.main.async {
-                shimmer = true
-            }
-        } else {
-            shimmer = false
-        }
+        .shadow(color: .black.opacity(isPrivate ? 0.30 : 0.18), radius: 1, x: 0, y: 1)
     }
 
     private func syncFromWebView(force: Bool = false) {
@@ -222,19 +143,15 @@ struct SafariAddressBar: View {
 
         if let url = URL(string: input), let scheme = url.scheme, !scheme.isEmpty {
             tab.load(url)
-        } else if looksLikeDomain(input), let url = URL(string: "https://\\(input)") {
+        } else if !input.contains(" "), input.contains("."),
+                  let url = URL(string: "https://\(input)") {
             tab.load(url)
         } else {
             let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            if let searchURL = URL(string: "https://www.google.com/search?q=\\(encoded)") {
-                tab.load(searchURL)
+            if let url = URL(string: "https://www.google.com/search?q=\(encoded)") {
+                tab.load(url)
             }
         }
-
         focusedField.wrappedValue = nil
-    }
-
-    private func looksLikeDomain(_ input: String) -> Bool {
-        !input.contains(" ") && input.contains(".") && !input.hasPrefix(".")
     }
 }
