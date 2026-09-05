@@ -197,8 +197,8 @@ private struct SafariBookmarkEditorOverlay: View {
                     trailing: {
                         SafariLegacyTextButton(
                             title: "Save",
-                            compact: true,
                             highlighted: true,
+                            compact: true,
                             action: onSave
                         )
                         .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || url.isEmpty)
