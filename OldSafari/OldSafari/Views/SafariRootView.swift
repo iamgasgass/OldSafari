@@ -11,6 +11,9 @@ struct SafariRootView: View {
         GeometryReader { geometry in
             if let tab = store.selected {
                 ZStack(alignment: .top) {
+                    // Web content is edge-to-edge. The classic Safari chrome
+                    // floats above it, while safe-area insets are consumed only
+                    // by the chrome so the home indicator never covers controls.
                     pageContent(for: tab)
                         .ignoresSafeArea()
 
@@ -47,10 +50,8 @@ struct SafariRootView: View {
             SafariLibraryView(store: store, currentTab: store.selected)
         }
         .sheet(isPresented: $showShare) {
-            if let tab = store.selected {
-                SafariActionsView(store: store, tab: tab)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+            if let url = store.selected?.webView.url {
+                ShareSheet(items: [url])
             }
         }
     }
@@ -68,10 +69,7 @@ struct SafariRootView: View {
         VStack(spacing: 0) {
             Color.clear.frame(height: topInset)
             SafariAddressBar(tab: tab, isPrivate: tab.isPrivate)
-            SafariProgressBar(
-                progress: tab.estimatedProgress,
-                isLoading: tab.isLoading
-            )
+            SafariProgressBar(progress: tab.estimatedProgress, isLoading: tab.isLoading)
         }
         .background(
             chromeGradient(isPrivate: tab.isPrivate)
