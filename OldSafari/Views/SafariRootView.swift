@@ -7,25 +7,21 @@ struct SafariRootView: View {
     @State private var showLibrary = false
     @State private var showShare = false
 
-    private let addressBarHeight: CGFloat = 47
-    private let progressHeight: CGFloat = 2
-    private let toolbarContentHeight: CGFloat = 48
-    private let toolbarGestureClearance: CGFloat = 8
-
     var body: some View {
         GeometryReader { geometry in
             if let tab = store.selected {
                 ZStack(alignment: .top) {
+                    // Web content is edge-to-edge. The classic Safari chrome
+                    // floats above it, while safe-area insets are consumed only
+                    // by the chrome so the home indicator never covers controls.
                     pageContent(for: tab)
                         .ignoresSafeArea()
-                        // The web view remains edge-to-edge, but its content is
-                        // physically displaced below the floating Safari chrome.
-                        .padding(.top, geometry.safeAreaInsets.top + addressBarHeight + progressHeight)
-                        .padding(.bottom, geometry.safeAreaInsets.bottom + toolbarContentHeight + toolbarGestureClearance)
 
                     VStack(spacing: 0) {
                         chrome(for: tab, topInset: geometry.safeAreaInsets.top)
+
                         Spacer(minLength: 0)
+
                         SafariToolbar(
                             tab: tab,
                             isPrivate: tab.isPrivate,
@@ -75,10 +71,7 @@ struct SafariRootView: View {
         VStack(spacing: 0) {
             Color.clear.frame(height: topInset)
             SafariAddressBar(tab: tab, isPrivate: tab.isPrivate)
-            SafariProgressBar(
-                progress: tab.estimatedProgress,
-                isLoading: tab.isLoading
-            )
+            SafariProgressBar(progress: tab.estimatedProgress, isLoading: tab.isLoading)
         }
         .background(
             chromeGradient(isPrivate: tab.isPrivate)

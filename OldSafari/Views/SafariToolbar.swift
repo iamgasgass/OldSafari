@@ -29,10 +29,10 @@ struct SafariToolbar: View {
                 toolbarButton("NavAction", disabled: false, action: onShare)
                 toolbarButton("NavBookmarks", disabled: false, action: onLibrary)
 
-                Button {
+                Button(action: {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     onTabs()
-                } label: {
+                }) {
                     ZStack {
                         Image(tabIconName)
                             .resizable()
