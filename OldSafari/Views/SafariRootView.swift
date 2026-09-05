@@ -12,6 +12,7 @@ struct SafariRootView: View {
             if let tab = store.selected {
                 ZStack(alignment: .top) {
                     pageContent(for: tab)
+                        .id(tab.id)
                         .ignoresSafeArea()
 
                     VStack(spacing: 0) {
@@ -42,7 +43,7 @@ struct SafariRootView: View {
                     }
 
                     if showLibrary {
-                        SafariLibraryView(store: store, currentTab: tab) {
+                        SafariLibraryView(store: store) {
                             withAnimation(.easeOut(duration: 0.18)) { showLibrary = false }
                         }
                         .transition(.move(edge: .bottom))
@@ -50,7 +51,7 @@ struct SafariRootView: View {
                     }
 
                     if showShare {
-                        SafariActionsView(store: store, tab: tab) {
+                        SafariActionsView(store: store) {
                             withAnimation(.easeOut(duration: 0.18)) { showShare = false }
                         }
                         .transition(.move(edge: .bottom))

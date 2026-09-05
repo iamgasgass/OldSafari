@@ -16,15 +16,17 @@ struct ShareSheet: UIViewControllerRepresentable {
 /// presentation while preserving the browser's edge-to-edge/full-screen view.
 struct SafariActionsView: View {
     @ObservedObject var store: SafariTabStore
-    let tab: SafariTab
     let onClose: () -> Void
 
     @State private var showSystemShare = false
     @State private var showBookmarkEditor = false
     @State private var bookmarkTitle = ""
+    @State private var showMailShare = false
+
+    private var currentTab: SafariTab? { store.selected }
 
     private var bookmarkExists: Bool {
-        guard let url = tab.url?.absoluteString else { return false }
+        guard let url = currentTab?.url?.absoluteString else { return false }
         return store.bookmarks.contains { $0.url == url }
     }
 
@@ -48,33 +50,47 @@ struct SafariActionsView: View {
                     )
 
                     VStack(spacing: 0) {
-                        SafariLegacyActionRow(icon: "Bookmark", title: bookmarkExists ? "Bookmarked" : "Add Bookmark", disabled: tab.url == nil || bookmarkExists) {
-                            bookmarkTitle = tab.title.isEmpty ? (tab.url?.host ?? "Bookmark") : tab.title
+                        SafariLegacyActionRow(icon: "Bookmark", title: bookmarkExists ? "Bookmarked" : "Add Bookmark", disabled: currentTab?.url == nil || bookmarkExists) {
+                            bookmarkTitle = currentTab?.title.isEmpty == false ? currentTab?.title ?? "Bookmark" : (currentTab?.url?.host ?? "Bookmark")
                             showBookmarkEditor = true
                         }
 
-                        SafariLegacyActionRow(systemImage: "doc.on.doc", title: "Copy Link", disabled: tab.url == nil) {
-                            UIPasteboard.general.string = tab.url?.absoluteString
+                        SafariLegacyActionRow(systemImage: "doc.on.doc", title: "Copy Link", disabled: currentTab?.url == nil) {
+                            UIPasteboard.general.string = currentTab?.url?.absoluteString
                             onClose()
                         }
 
-                        SafariLegacyActionRow(systemImage: "square.and.arrow.up", title: "Share…", disabled: tab.url == nil) {
+                        SafariLegacyActionRow(systemImage: "square.and.arrow.up", title: "Share…", disabled: currentTab?.url == nil) {
                             showSystemShare = true
                         }
 
-                        SafariLegacyActionRow(systemImage: "arrow.clockwise", title: "Reload", disabled: false) {
-                            tab.reload()
+                        SafariLegacyActionRow(systemImage: "arrow.clockwise", title: "Reload", disabled: currentTab == nil) {
+                            currentTab?.reload()
                             onClose()
                         }
 
-                        SafariLegacyActionRow(systemImage: "magnifyingglass", title: "Find on Page", disabled: false) {
-                            tab.findOnPage()
+                        SafariLegacyActionRow(systemImage: "magnifyingglass", title: "Find on Page", disabled: currentTab == nil) {
+                            currentTab?.findOnPage()
                             onClose()
                         }
 
-                        SafariLegacyActionRow(systemImage: "desktopcomputer", title: tab.isRequestingDesktopSite ? "Request Mobile Site" : "Request Desktop Site", disabled: false) {
-                            tab.toggleDesktopSite()
+                        SafariLegacyActionRow(systemImage: "desktopcomputer", title: currentTab?.isRequestingDesktopSite == true ? "Request Mobile Site" : "Request Desktop Site", disabled: currentTab == nil) {
+                            currentTab?.toggleDesktopSite()
                             onClose()
+                        }
+
+                        SafariLegacyActionRow(systemImage: "house", title: "Add to Home Screen", disabled: true) {}
+
+                        SafariLegacyActionRow(systemImage: "envelope", title: "Mail Link to this Page", disabled: currentTab?.url == nil) {
+                            showMailShare = true
+                        }
+
+                        SafariLegacyActionRow(systemImage: "printer", title: "Print", disabled: currentTab?.url == nil) {
+                            if let webView = currentTab?.webView {
+                                let controller = UIPrintInteractionController.shared
+                                controller.printFormatter = webView.viewPrintFormatter()
+                                controller.present(animated: true, completionHandler: nil)
+                            }
                         }
                     }
                     .background(
@@ -96,10 +112,10 @@ struct SafariActionsView: View {
                 if showBookmarkEditor {
                     SafariBookmarkEditorOverlay(
                         title: $bookmarkTitle,
-                        url: tab.url?.absoluteString ?? "",
+                        url: currentTab?.url?.absoluteString ?? "",
                         onCancel: { showBookmarkEditor = false },
                         onSave: {
-                            store.addBookmark(title: bookmarkTitle, url: tab.url?.absoluteString ?? "")
+                            store.addBookmark(title: bookmarkTitle, url: currentTab?.url?.absoluteString ?? "")
                             showBookmarkEditor = false
                             onClose()
                         }
@@ -109,8 +125,13 @@ struct SafariActionsView: View {
             }
         }
         .sheet(isPresented: $showSystemShare) {
-            if let url = tab.url {
+            if let url = currentTab?.url {
                 ShareSheet(items: [url])
+            }
+        }
+        .sheet(isPresented: $showMailShare) {
+            if let url = currentTab?.url {
+                ShareSheet(items: ["\(currentTab?.title ?? "")\n\(url.absoluteString)", url])
             }
         }
     }

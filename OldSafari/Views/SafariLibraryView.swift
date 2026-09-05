@@ -6,7 +6,6 @@ import UIKit
 /// always operate on the current SafariTab instance passed by SafariRootView.
 struct SafariLibraryView: View {
     @ObservedObject var store: SafariTabStore
-    let currentTab: SafariTab?
     let onClose: () -> Void
 
     @State private var section = 0
@@ -98,7 +97,7 @@ struct SafariLibraryView: View {
                             }
 
                             Button {
-                                guard let url = URL(string: bookmark.url), let currentTab else { return }
+                                guard let url = URL(string: bookmark.url), let currentTab = store.selected else { return }
                                 currentTab.load(url)
                                 onClose()
                             } label: {
@@ -155,7 +154,7 @@ struct SafariLibraryView: View {
 
                         ForEach(group.entries) { entry in
                             Button {
-                                guard let url = URL(string: entry.url), let currentTab else { return }
+                                guard let url = URL(string: entry.url), let currentTab = store.selected else { return }
                                 currentTab.load(url)
                                 onClose()
                             } label: {
