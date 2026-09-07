@@ -56,6 +56,14 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = true
 
+        // Never lock the web content (or its keyboard, selection handles and
+        // context menus) to a fixed appearance. Both Normal and Private mode
+        // only theme the custom Safari chrome drawn by this app; the actual
+        // page content and every system-provided control must keep following
+        // the device's own Light/Dark Mode setting, exactly like the current
+        // Safari does.
+        webView.overrideUserInterfaceStyle = .unspecified
+
         // Do not spoof a fixed historical iOS version. WebKit's native UA
         // tracks the installed OS and prevents modern sites such as Google
         // from serving incompatible markup or feature-detection results.
