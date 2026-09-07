@@ -138,6 +138,9 @@ struct SafariWebView: UIViewRepresentable {
             guard let controller = webView.window?.rootViewController else { return }
             var top = controller
             while let presented = top.presentedViewController { top = presented }
+            // System alerts always follow the device's Light/Dark Mode
+            // setting, in both Normal and Private browsing.
+            alert.overrideUserInterfaceStyle = .unspecified
             top.present(alert, animated: true)
         }
 
@@ -245,6 +248,9 @@ struct SafariWebView: UIViewRepresentable {
                         activityItems: [url],
                         applicationActivities: nil
                     )
+                    // The native share sheet always matches the system
+                    // appearance, in both Normal and Private browsing.
+                    controller.overrideUserInterfaceStyle = .unspecified
                     controller.popoverPresentationController?.sourceView = webView
                     webView.window?.rootViewController?.present(controller, animated: true)
                 }
