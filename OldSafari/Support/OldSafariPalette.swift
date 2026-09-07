@@ -112,6 +112,15 @@ struct OldOSSafariTheme {
     let shareCancelInner: [OldOSStop]
     let shareCancelBorder: [Color]
 
+    // Back/Forward history preview panel. This strip is always the dark
+    // "iOS 6 sheet metal" treatment regardless of Normal/Private mode, so the
+    // title needs its own colours instead of reusing `shareButtonText`
+    // (which flips to black for the light Normal-mode action-sheet buttons
+    // and would be unreadable on this dark strip).
+    let panelTitleText: Color
+    let panelTitleShadow: Color
+    let panelTitleShadowY: CGFloat
+
     // Tab switcher / app
     let tabsBackground: [Color]
     let tabTitle: Color
@@ -206,6 +215,10 @@ struct OldOSSafariTheme {
             OldOSStop(.oldOS(189, 20, 33), 1)
         ],
         shareCancelBorder: [Color.white.opacity(0.55), Color.black.opacity(0.35)],
+
+        panelTitleText: .white,
+        panelTitleShadow: Color.black.opacity(0.9),
+        panelTitleShadowY: -0.9,
 
         tabsBackground: [.oldOS(149, 161, 172), .oldOS(85, 105, 121)],
         tabTitle: .white,
@@ -302,6 +315,10 @@ struct OldOSSafariTheme {
             OldOSStop(.oldOS(189, 20, 33), 1)
         ],
         shareCancelBorder: [Color.white.opacity(0.55), Color.black.opacity(0.35)],
+
+        panelTitleText: .white,
+        panelTitleShadow: Color.black.opacity(0.9),
+        panelTitleShadowY: -0.9,
 
         tabsBackground: [.oldOS(74, 76, 80), .oldOS(20, 21, 24)],
         tabTitle: .white,
