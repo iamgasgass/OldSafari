@@ -120,12 +120,12 @@ struct SafariHistoryPreviewPanel: View {
 
                 Text(request.title)
                     .font(OldOSFont.bold(13.25))
-                    .foregroundColor(theme.shareButtonText)
+                    .foregroundColor(theme.panelTitleText)
                     .shadow(
-                        color: theme.shareButtonTextShadow,
+                        color: theme.panelTitleShadow,
                         radius: 0,
                         x: 0,
-                        y: theme.shareButtonTextShadowY
+                        y: theme.panelTitleShadowY
                     )
             }
             .frame(height: headerHeight)
