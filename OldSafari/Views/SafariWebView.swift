@@ -54,7 +54,7 @@ struct SafariWebView: UIViewRepresentable {
         Coordinator()
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
         weak var webView: WKWebView?
         var onOpenInNewTab: ((URL) -> Void)?
 
@@ -101,6 +101,15 @@ struct SafariWebView: UIViewRepresentable {
                 return
             }
 
+            // Custom scheme used by the blob download shim in SafariTab.
+            // The URL carries `?name=...&data=<base64>` and we materialise it
+            // as a real file under the app's Downloads directory.
+            if scheme == "oldsafari-download" {
+                handleBlobDownload(url: url)
+                decisionHandler(.cancel)
+                return
+            }
+
             let webHandledSchemes: Set<String> = [
                 "http", "https", "about", "blob", "data", "file"
             ]
@@ -113,6 +122,163 @@ struct SafariWebView: UIViewRepresentable {
 
             decisionHandler(.allow)
         }
+
+        // MARK: Download detection
+
+        /// The response phase is where WebKit tells us the MIME type and
+        /// headers. Anything the browser cannot render inline (attachment,
+        /// unknown MIME, application/octet-stream) is redirected to the
+        /// download machinery, exactly like the current Safari does.
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationResponse: WKNavigationResponse,
+            decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+        ) {
+            guard let response = navigationResponse.response as? HTTPURLResponse,
+                  let requestURL = response.url
+            else {
+                decisionHandler(.allow)
+                return
+            }
+
+            let disposition = (response.value(forHTTPHeaderField: "Content-Disposition") ?? "").lowercased()
+            let mime = (response.mimeType ?? "").lowercased()
+
+            let isAttachment = disposition.contains("attachment")
+            let notRenderable = !navigationResponse.canShowMIMEType
+            let downloadishMIME = mime == "application/octet-stream"
+                || mime.hasPrefix("application/zip")
+                || mime.hasPrefix("application/pdf") && isAttachment
+                || mime.hasPrefix("application/x-")
+                || mime.hasPrefix("application/vnd")
+                || mime.hasPrefix("audio/")
+                || mime.hasPrefix("video/") && isAttachment
+
+            if isAttachment || notRenderable || downloadishMIME {
+                let suggested = filenameHint(response: response, url: requestURL)
+                // Prime the download entry so the manager can match it up
+                // when WKDownload calls back. WKWebView will hand us the
+                // real `WKDownload` in `navigationResponseDidBecomeDownload`.
+                pendingHint = (suggested, requestURL)
+                decisionHandler(.download)
+                return
+            }
+
+            decisionHandler(.allow)
+        }
+
+        /// Filled in from `decidePolicyFor:navigationResponse:` so we can
+        /// carry the suggested filename into `didBecome`.
+        private var pendingHint: (String, URL)?
+
+        func webView(
+            _ webView: WKWebView,
+            navigationAction: WKNavigationAction,
+            didBecome download: WKDownload
+        ) {
+            let source = navigationAction.request.url ?? URL(string: "about:blank")!
+            _ = SafariDownloadManager.shared.startDownload(
+                source: source,
+                suggestedFilename: source.lastPathComponent,
+                using: download
+            )
+            NotificationCenter.default.post(
+                name: .oldSafariDownloadStarted,
+                object: nil
+            )
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            navigationResponse: WKNavigationResponse,
+            didBecome download: WKDownload
+        ) {
+            let hint = pendingHint
+            pendingHint = nil
+
+            let filename = hint?.0
+                ?? navigationResponse.response.suggestedFilename
+                ?? "download"
+            let source = hint?.1
+                ?? navigationResponse.response.url
+                ?? URL(string: "about:blank")!
+
+            _ = SafariDownloadManager.shared.startDownload(
+                source: source,
+                suggestedFilename: filename,
+                using: download
+            )
+            NotificationCenter.default.post(
+                name: .oldSafariDownloadStarted,
+                object: nil
+            )
+        }
+
+        private func filenameHint(response: HTTPURLResponse, url: URL) -> String {
+            if let suggested = response.suggestedFilename, !suggested.isEmpty {
+                return suggested
+            }
+            if !url.lastPathComponent.isEmpty {
+                return url.lastPathComponent
+            }
+            return "download"
+        }
+
+        // MARK: Blob download bridge
+
+        private func handleBlobDownload(url: URL) {
+            guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let items = comps.queryItems
+            else { return }
+
+            let name = items.first(where: { $0.name == "name" })?.value ?? "download"
+            let payload = items.first(where: { $0.name == "data" })?.value ?? ""
+            guard let data = Data(base64Encoded: payload) else { return }
+
+            let base = (try? FileManager.default.url(
+                for: .documentDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )) ?? URL(fileURLWithPath: NSTemporaryDirectory())
+            let folder = base.appendingPathComponent("Downloads", isDirectory: true)
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+            let sanitized = name.replacingOccurrences(of: "/", with: "_")
+            var destination = folder.appendingPathComponent(sanitized)
+            var counter = 1
+            let stem = (sanitized as NSString).deletingPathExtension
+            let ext = (sanitized as NSString).pathExtension
+            while FileManager.default.fileExists(atPath: destination.path) {
+                counter += 1
+                let composed = ext.isEmpty ? "\(stem) (\(counter))" : "\(stem) (\(counter)).\(ext)"
+                destination = folder.appendingPathComponent(composed)
+            }
+
+            do {
+                try data.write(to: destination)
+                let entry = SafariDownload(
+                    sourceURL: url,
+                    suggestedFilename: destination.lastPathComponent
+                )
+                entry.updateProgress(
+                    received: Int64(data.count),
+                    expected: Int64(data.count)
+                )
+                entry.markCompleted(at: destination)
+                DispatchQueue.main.async {
+                    SafariDownloadManager.shared.downloads.insert(entry, at: 0)
+                    NotificationCenter.default.post(
+                        name: .oldSafariDownloadStarted,
+                        object: nil
+                    )
+                }
+            } catch {
+                // Silently ignore; the shim is best-effort by nature.
+            }
+        }
+
+        // MARK: Navigation failures
 
         func webView(
             _ webView: WKWebView,
@@ -240,6 +406,13 @@ struct SafariWebView: UIViewRepresentable {
                     UIPasteboard.general.url = url
                 }
 
+                let download = UIAction(
+                    title: "Download Linked File",
+                    image: UIImage(systemName: "arrow.down.circle")
+                ) { _ in
+                    webView.load(URLRequest(url: url))
+                }
+
                 let share = UIAction(
                     title: "Share\u{2026}",
                     image: UIImage(systemName: "square.and.arrow.up")
@@ -255,10 +428,9 @@ struct SafariWebView: UIViewRepresentable {
                     webView.window?.rootViewController?.present(controller, animated: true)
                 }
 
-                var actions = [open, copy, share]
-                if self?.onOpenInNewTab != nil {
-                    actions.insert(newTab, at: 1)
-                }
+                var actions: [UIAction] = [open]
+                if self?.onOpenInNewTab != nil { actions.append(newTab) }
+                actions.append(contentsOf: [copy, download, share])
                 return UIMenu(title: url.absoluteString, children: actions)
             }
 

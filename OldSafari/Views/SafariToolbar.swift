@@ -28,6 +28,11 @@ struct SafariToolbar: View {
     /// home indicator / gesture area of recent iPhones.
     var lift: CGFloat = 6
 
+    /// If non-zero, a red badge is stamped on the share glyph so the user
+    /// knows there are downloads in flight — the modern-Safari cue in iOS 6
+    /// clothing.
+    var downloadCount: Int = 0
+
     var onBack: () -> Void = {}
     var onForward: () -> Void = {}
     var onShare: () -> Void = {}
@@ -44,6 +49,10 @@ struct SafariToolbar: View {
     var onBackHistory: (() -> Void)? = nil
     var onForwardHistory: (() -> Void)? = nil
     var onTabsLongPress: (() -> Void)? = nil
+
+    /// Long-pressing the share button opens the Downloads sheet directly,
+    /// so users do not have to walk through the share list every time.
+    var onDownloadsTap: (() -> Void)? = nil
 
     private var tabImage: String {
         let clamped = min(max(tabCount, 1), 8)
@@ -69,7 +78,18 @@ struct SafariToolbar: View {
                             action: onForward,
                             onLongPress: onForwardHistory
                         )
-                        OldOSToolBarButton(image: "NavAction", action: onShare)
+                        OldOSToolBarButton(
+                            image: "NavAction",
+                            action: onShare,
+                            onLongPress: onDownloadsTap
+                        )
+                        .overlay(alignment: .topTrailing) {
+                            if downloadCount > 0 {
+                                DownloadBadge(count: downloadCount)
+                                    .offset(x: -8, y: 6)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                         OldOSToolBarButton(image: "NavBookmarks", action: onBookmarks)
                         OldOSToolBarButton(
                             image: tabImage,
@@ -151,5 +171,40 @@ struct SafariToolbar: View {
             }
             .oldOSBorder(width: 1, edges: [.top], color: theme.barHairline)
         )
+    }
+}
+
+/// The small red pill badge iOS uses on tab bar icons, redrawn with iOS 6
+/// glossy highlight so it lives comfortably on the OldOS toolbar chrome.
+private struct DownloadBadge: View {
+    let count: Int
+
+    var body: some View {
+        let label = count > 9 ? "9+" : String(count)
+        ZStack {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 1.00, green: 0.35, blue: 0.32),
+                            Color(red: 0.80, green: 0.10, blue: 0.10)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.9), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.4), radius: 1, x: 0, y: 1)
+
+            Text(label)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.white)
+                .shadow(color: .black.opacity(0.5), radius: 0, x: 0, y: -0.5)
+        }
+        .frame(minWidth: 16, minHeight: 16)
+        .padding(.horizontal, 3)
     }
 }

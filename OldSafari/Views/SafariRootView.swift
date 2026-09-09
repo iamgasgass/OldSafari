@@ -7,6 +7,7 @@ import UIKit
 struct SafariRootView: View {
     @StateObject private var store = SafariTabStore()
     @StateObject private var safeArea = OldOSSafeArea()
+    @ObservedObject private var downloads = SafariDownloadManager.shared
 
     @State private var showTabs = false
     @State private var showLibrary = false
@@ -23,6 +24,7 @@ struct SafariRootView: View {
                 if let tab = store.selected {
                     SafariSelectedTabView(
                         store: store,
+                        downloads: downloads,
                         tab: tab,
                         theme: theme,
                         topInset: topInset,
@@ -38,6 +40,11 @@ struct SafariRootView: View {
         }
         .ignoresSafeArea()
         .statusBarHidden(false)
+        // Never force a global appearance on the SwiftUI hierarchy: the
+        // system chrome (keyboard, context menus, native share sheet, text
+        // selection handles, alerts) must always follow the device's own
+        // Light/Dark Mode setting, in Normal and Private browsing alike.
+        .preferredColorScheme(nil)
     }
 
     private var theme: OldOSSafariTheme {
@@ -47,6 +54,7 @@ struct SafariRootView: View {
 
 private struct SafariSelectedTabView: View {
     @ObservedObject var store: SafariTabStore
+    @ObservedObject var downloads: SafariDownloadManager
     @ObservedObject var tab: SafariTab
 
     let theme: OldOSSafariTheme
@@ -145,15 +153,43 @@ private struct SafariSelectedTabView: View {
                 SafariActionsView(
                     store: store,
                     tab: tab,
+                    downloads: downloads,
                     theme: theme,
                     topInset: topInset,
                     bottomInset: bottomInset,
                     onClose: {
                         withAnimation(.linear(duration: 0.25)) { showShare = false }
+                    },
+                    onShowDownloads: {
+                        withAnimation(.linear(duration: 0.25)) { showShare = false }
+                        // Give the share sheet a beat to slide off before the
+                        // Downloads panel slides on, otherwise the two curtains
+                        // step on each other's animations.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+                            withAnimation(.linear(duration: 0.25)) {
+                                downloads.showDownloadsPanel = true
+                            }
+                        }
                     }
                 )
                 .transition(.move(edge: .bottom))
                 .zIndex(30)
+            }
+
+            if downloads.showDownloadsPanel {
+                SafariDownloadsView(
+                    manager: downloads,
+                    theme: theme,
+                    topInset: topInset,
+                    bottomInset: bottomInset,
+                    onClose: {
+                        withAnimation(.linear(duration: 0.25)) {
+                            downloads.showDownloadsPanel = false
+                        }
+                    }
+                )
+                .transition(.move(edge: .bottom))
+                .zIndex(40)
             }
         }
         .onAppear { syncURLText() }
@@ -163,6 +199,16 @@ private struct SafariSelectedTabView: View {
         }
         .onReceive(tab.$url) { _ in
             if editingField == nil { syncURLText() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .oldSafariDownloadStarted)) { _ in
+            // Auto-reveal the panel the first time a download begins so users
+            // discover it, exactly like recent Safari does the first time.
+            if UserDefaults.standard.bool(forKey: "OldSafari.SeenDownloadsPanel") == false {
+                UserDefaults.standard.set(true, forKey: "OldSafari.SeenDownloadsPanel")
+                withAnimation(.linear(duration: 0.25)) {
+                    downloads.showDownloadsPanel = true
+                }
+            }
         }
     }
 
@@ -217,6 +263,7 @@ private struct SafariSelectedTabView: View {
                 tabCount: store.visibleTabs.count,
                 isPrivate: store.isPrivateMode,
                 bottomInset: bottomInset,
+                downloadCount: downloads.runningCount,
                 onBack: { tab.goBack() },
                 onForward: { tab.goForward() },
                 onShare: { withAnimation(.linear(duration: 0.25)) { showShare = true } },
@@ -230,6 +277,11 @@ private struct SafariSelectedTabView: View {
                 },
                 onTabsLongPress: {
                     withAnimation(.linear(duration: 0.25)) { showPageActions = true }
+                },
+                onDownloadsTap: {
+                    withAnimation(.linear(duration: 0.25)) {
+                        downloads.showDownloadsPanel = true
+                    }
                 }
             )
             .zIndex(2)
@@ -247,7 +299,8 @@ private struct SafariSelectedTabView: View {
                 urlText: $urlText,
                 googleText: $googleText,
                 onNavigate: navigate,
-                onSearch: search
+                onSearch: search,
+                onToggleReader: { tab.toggleReader() }
             )
         }
         .background(

@@ -23,6 +23,9 @@ struct SafariSearchRow: View {
 
     var onNavigate: (String) -> Void
     var onSearch: (String) -> Void
+    /// Reader Mode toggle. Nil-safe so screens that reuse the row without
+    /// wiring Reader can keep their existing call sites unchanged.
+    var onToggleReader: (() -> Void)? = nil
 
     /// Outer margin of the field row.  Small enough to look edge to edge, wide
     /// enough to clear the rounded display corners of recent iPhones.
@@ -66,12 +69,7 @@ struct SafariSearchRow: View {
                 VStack(spacing: 6) {
                     Spacer(minLength: 0)
 
-                    Text(tab.title.isEmpty ? "Untitled" : tab.title)
-                        .foregroundColor(theme.pageTitle)
-                        .font(OldOSFont.bold(14))
-                        .shadow(color: theme.pageTitleShadow, radius: 0, x: 0, y: theme.pageTitleShadowY)
-                        .lineLimit(1)
-                        .padding([.leading, .trailing], 24)
+                    titleRow
 
                     HStack(spacing: gap) {
                         if !isEditingSearch {
@@ -117,6 +115,38 @@ struct SafariSearchRow: View {
             }
         }
         .frame(height: 68)
+    }
+
+    /// Page title + Reader glyph. The glyph is present only while Reader is
+    /// actually useful (an article-like page is loaded), matching how the
+    /// current Safari lights up its Reader indicator.
+    private var titleRow: some View {
+        HStack(spacing: 6) {
+            Text(tab.title.isEmpty ? "Untitled" : tab.title)
+                .foregroundColor(theme.pageTitle)
+                .font(OldOSFont.bold(14))
+                .shadow(color: theme.pageTitleShadow, radius: 0, x: 0, y: theme.pageTitleShadowY)
+                .lineLimit(1)
+
+            if tab.readerAvailable, let onToggleReader {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onToggleReader()
+                } label: {
+                    Text(tab.isReaderActive ? "Aa\u{2022}" : "Aa")
+                        .font(OldOSFont.bold(10))
+                        .foregroundColor(theme.pageTitle)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(theme.pageTitle.opacity(0.55), lineWidth: 0.75)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding([.leading, .trailing], 24)
     }
 
     private var cancelButton: some View {

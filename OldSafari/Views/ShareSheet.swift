@@ -1,5 +1,7 @@
 import SwiftUI
+import SafariServices
 import UIKit
+import UniformTypeIdentifiers
 import WebKit
 
 // MARK: - iOS 6 action sheet
@@ -29,7 +31,7 @@ struct OldOSActionSheet: View {
         let rows = CGFloat(buttons.count)
         let content = 30 + 18 + rows * 55 + 50 + 25 + bottomInset
         let minimum = available * heightFraction
-        return min(max(content, minimum), available * 0.88)
+        return min(max(content, minimum), available * 0.94)
     }
 
     var body: some View {
@@ -51,21 +53,26 @@ struct OldOSActionSheet: View {
                         Rectangle().fill(LinearGradient(oldOS: theme.shareBody))
                     }
 
-                    VStack(spacing: 0) {
-                        ForEach(Array(buttons.enumerated()), id: \.element.id) { index, button in
-                            sheetButton(
-                                title: button.title,
-                                destructive: button.destructive,
-                                action: button.action
-                            )
-                            .padding(.top, index == 0 ? 18 : 2.5)
-                            .padding(.bottom, 2.5)
+                    // Buttons scroll when there are too many for the sheet
+                    // height, so extending the action list never clips rows
+                    // off the top of the sheet.
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 0) {
+                            ForEach(Array(buttons.enumerated()), id: \.element.id) { index, button in
+                                sheetButton(
+                                    title: button.title,
+                                    destructive: button.destructive,
+                                    action: button.action
+                                )
+                                .padding(.top, index == 0 ? 18 : 2.5)
+                                .padding(.bottom, 2.5)
+                            }
                         }
-
-                        Spacer(minLength: 0)
-
+                    }
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
                         cancelButton
                             .padding(.bottom, 25 + bottomInset)
+                            .background(LinearGradient(oldOS: theme.shareBody))
                     }
                 }
                 .frame(height: sheetHeight(for: geometry.size.height))
@@ -155,35 +162,70 @@ struct OldOSActionSheet: View {
 struct SafariActionsView: View {
     @ObservedObject var store: SafariTabStore
     @ObservedObject var tab: SafariTab
+    @ObservedObject var downloads: SafariDownloadManager
     let theme: OldOSSafariTheme
     let topInset: CGFloat
     let bottomInset: CGFloat
     let onClose: () -> Void
+    let onShowDownloads: () -> Void
 
     @State private var showAddBookmark = false
+    @State private var showExporter = false
+    @State private var exporterURL: URL?
     @State private var bookmarkTitle = ""
 
     private var currentURL: URL? { tab.url }
+
+    /// The share sheet used to be a fixed 8-button strip, but the app now
+    /// mirrors the modern-Safari roster: Reader, Reading List, Save PDF, and
+    /// Downloads have all been added. The list is assembled here so absent
+    /// affordances (Reader off pages that aren't articles, Downloads when
+    /// nothing has ever been downloaded) don't waste a row.
+    private var actionButtons: [OldOSSheetButton] {
+        var buttons: [OldOSSheetButton] = []
+
+        buttons.append(OldOSSheetButton(title: "Add Bookmark") {
+            bookmarkTitle = tab.title.isEmpty ? (currentURL?.host ?? "Untitled") : tab.title
+            withAnimation(.linear(duration: 0.25)) { showAddBookmark = true }
+        })
+
+        buttons.append(OldOSSheetButton(title: "Add to Reading List") { addToReadingList() })
+        buttons.append(OldOSSheetButton(title: "Add to Home Screen") { addToHomeScreen() })
+        buttons.append(OldOSSheetButton(title: "Mail Link to this Page") { mailLink() })
+        buttons.append(OldOSSheetButton(title: "Copy") { copyLink() })
+
+        if tab.readerAvailable {
+            buttons.append(OldOSSheetButton(
+                title: tab.isReaderActive ? "Hide Reader" : "Show Reader"
+            ) { toggleReader() })
+        }
+
+        buttons.append(OldOSSheetButton(title: "Find on Page") { findOnPage() })
+        buttons.append(OldOSSheetButton(
+            title: tab.isRequestingDesktopSite ? "Request Mobile Site" : "Request Desktop Site"
+        ) { requestDesktopSite() })
+
+        buttons.append(OldOSSheetButton(title: "Save PDF to Files") { savePDFToFiles() })
+
+        if !downloads.downloads.isEmpty {
+            let count = downloads.runningCount
+            let title = count > 0
+                ? "Downloads (\(count) active)"
+                : "Downloads"
+            buttons.append(OldOSSheetButton(title: title) { onShowDownloads() })
+        }
+
+        buttons.append(OldOSSheetButton(title: "Share\u{2026}") { systemShare() })
+        buttons.append(OldOSSheetButton(title: "Print") { printPage() })
+
+        return buttons
+    }
 
     var body: some View {
         ZStack {
             OldOSActionSheet(
                 theme: theme,
-                buttons: [
-                    OldOSSheetButton(title: "Add Bookmark") {
-                        bookmarkTitle = tab.title.isEmpty ? (currentURL?.host ?? "Untitled") : tab.title
-                        withAnimation(.linear(duration: 0.25)) { showAddBookmark = true }
-                    },
-                    OldOSSheetButton(title: "Add to Home Screen") { addToHomeScreen() },
-                    OldOSSheetButton(title: "Mail Link to this Page") { mailLink() },
-                    OldOSSheetButton(title: "Copy") { copyLink() },
-                    OldOSSheetButton(title: "Find on Page") { findOnPage() },
-                    OldOSSheetButton(
-                        title: tab.isRequestingDesktopSite ? "Request Mobile Site" : "Request Desktop Site"
-                    ) { requestDesktopSite() },
-                    OldOSSheetButton(title: "Share\u{2026}") { systemShare() },
-                    OldOSSheetButton(title: "Print") { printPage() }
-                ],
+                buttons: actionButtons,
                 bottomInset: bottomInset,
                 onCancel: onClose
             )
@@ -208,6 +250,23 @@ struct SafariActionsView: View {
                 .zIndex(2)
             }
         }
+        .fileExporter(
+            isPresented: $showExporter,
+            document: exporterURL.map { PDFDocumentFile(url: $0) },
+            contentType: .pdf,
+            defaultFilename: pdfFilename
+        ) { _ in
+            exporterURL = nil
+        }
+    }
+
+    private var pdfFilename: String {
+        let base = tab.title.isEmpty
+            ? (currentURL?.host ?? "Page")
+            : tab.title
+        return base
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
     }
 
     private func mailLink() {
@@ -247,6 +306,67 @@ struct SafariActionsView: View {
         onClose()
     }
 
+    private func toggleReader() {
+        tab.toggleReader()
+        onClose()
+    }
+
+    /// The system Reading List is shared with real Safari, so users can flip
+    /// back to iOS Safari later and pick up the queued articles.
+    private func addToReadingList() {
+        guard let currentURL,
+              SSReadingList.default() != nil
+        else { onClose(); return }
+
+        try? SSReadingList.default()?.addItem(
+            with: currentURL,
+            title: tab.title,
+            previewText: nil
+        )
+        onClose()
+    }
+
+    /// Render the current page as a PDF via WKWebView.createPDF and let the
+    /// user drop it into Files / iCloud Drive with the system document
+    /// picker.
+    private func savePDFToFiles() {
+        onClose()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            tab.webView.createPDF { result in
+                guard case let .success(data) = result else { return }
+                let base = (try? FileManager.default.url(
+                    for: .documentDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: nil,
+                    create: true
+                )) ?? URL(fileURLWithPath: NSTemporaryDirectory())
+                let folder = base.appendingPathComponent("Downloads", isDirectory: true)
+                try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+                let filename = "\(pdfFilename).pdf"
+                let destination = folder.appendingPathComponent(filename)
+                do {
+                    try data.write(to: destination)
+                    let entry = SafariDownload(
+                        sourceURL: tab.url ?? destination,
+                        suggestedFilename: filename
+                    )
+                    entry.updateProgress(received: Int64(data.count), expected: Int64(data.count))
+                    entry.markCompleted(at: destination)
+
+                    DispatchQueue.main.async {
+                        SafariDownloadManager.shared.downloads.insert(entry, at: 0)
+                        exporterURL = destination
+                        showExporter = true
+                    }
+                } catch {
+                    // Silent — the Downloads row won't appear but nothing else
+                    // is disturbed.
+                }
+            }
+        }
+    }
+
     /// Hands the page to the stock iOS share sheet, so AirDrop, Messages,
     /// Reading List and every share extension installed on the device work.
     private func systemShare() {
@@ -270,6 +390,8 @@ struct SafariActionsView: View {
                 activityItems: [currentURL],
                 applicationActivities: nil
             )
+            // System share sheet always mirrors the device Light/Dark Mode.
+            controller.overrideUserInterfaceStyle = .unspecified
             controller.popoverPresentationController?.sourceView = presenter.view
             controller.popoverPresentationController?.sourceRect = CGRect(
                 x: presenter.view.bounds.midX,
@@ -290,6 +412,26 @@ struct SafariActionsView: View {
         controller.printFormatter = tab.webView.viewPrintFormatter()
         controller.present(animated: true) { _, _, _ in }
         onClose()
+    }
+}
+
+/// FileDocument wrapper used by `SafariActionsView`'s `.fileExporter` so the
+/// on-disk PDF the browser just wrote can be re-exposed to the document
+/// picker without re-encoding it.
+private struct PDFDocumentFile: FileDocument {
+    static var readableContentTypes: [UTType] { [.pdf] }
+    static var writableContentTypes: [UTType] { [.pdf] }
+
+    let url: URL
+
+    init(url: URL) { self.url = url }
+
+    init(configuration: ReadConfiguration) throws {
+        throw CocoaError(.featureUnsupported)
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        try FileWrapper(url: url, options: .immediate)
     }
 }
 
@@ -410,7 +552,10 @@ struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        // System share sheet must always follow device Light/Dark Mode.
+        controller.overrideUserInterfaceStyle = .unspecified
+        return controller
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
