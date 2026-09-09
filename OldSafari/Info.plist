@@ -19,10 +19,10 @@
     <string>APPL</string>
 
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.1</string>
 
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
 
     <key>LSRequiresIPhoneOS</key>
     <true/>
@@ -49,11 +49,49 @@
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
 
+    <!--
+        The status bar previously forced LightContent, which locked the top bar
+        to a light look regardless of the device Light/Dark setting. It is now
+        Default, and view-controller-based appearance is on, so the status bar
+        (and every system control paired to it) follows iOS Light/Dark Mode.
+    -->
     <key>UIStatusBarStyle</key>
-    <string>UIStatusBarStyleLightContent</string>
+    <string>UIStatusBarStyleDefault</string>
 
     <key>UIViewControllerBasedStatusBarAppearance</key>
-    <false/>
+    <true/>
+
+    <!--
+        Grant the app access to Files.app so downloads and PDF exports can be
+        reshared, revealed and moved outside the app container.
+    -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
+
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+
+    <!--
+        The Downloads sheet offers "Save to Files" and "Reveal in Files".
+        iOS requires a purpose string before an app can add anything to the
+        user's document library or write to the Files app.
+    -->
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>OldSafari saves downloaded files to your Documents folder so you can access them from the Files app.</string>
+
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>OldSafari can save downloaded images to your Photos library.</string>
+
+    <!--
+        Register a custom scheme used internally by the blob download bridge
+        so pages that stream files via JavaScript can hand them back to
+        WKDownload without leaving the app.
+    -->
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>shareddocuments</string>
+        <string>itms-apps</string>
+    </array>
 
 </dict>
 </plist>
