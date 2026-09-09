@@ -27,7 +27,7 @@ final class SafariDownload: NSObject, ObservableObject, Identifiable {
 
     /// Live WKDownload handle, kept only while the download is running so we
     /// can honour Cancel from the UI.
-    fileprivate weak var download: WKDownload?
+    weak var download: WKDownload?
 
     /// Where the downloaded file lives once it has finished, under the app's
     /// container (`Documents/Downloads/...`). Persistent across launches.
