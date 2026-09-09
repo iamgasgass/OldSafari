@@ -355,7 +355,7 @@ struct SafariActionsView: View {
                     entry.markCompleted(at: destination)
 
                     DispatchQueue.main.async {
-                        SafariDownloadManager.shared.downloads.insert(entry, at: 0)
+                        SafariDownloadManager.shared.register(entry)
                         exporterURL = destination
                         showExporter = true
                     }

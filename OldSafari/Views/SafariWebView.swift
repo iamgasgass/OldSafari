@@ -54,7 +54,7 @@ struct SafariWebView: UIViewRepresentable {
         Coordinator()
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         weak var webView: WKWebView?
         var onOpenInNewTab: ((URL) -> Void)?
 
@@ -267,7 +267,7 @@ struct SafariWebView: UIViewRepresentable {
                 )
                 entry.markCompleted(at: destination)
                 DispatchQueue.main.async {
-                    SafariDownloadManager.shared.downloads.insert(entry, at: 0)
+                    SafariDownloadManager.shared.register(entry)
                     NotificationCenter.default.post(
                         name: .oldSafariDownloadStarted,
                         object: nil
