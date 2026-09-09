@@ -91,6 +91,18 @@
 			isa = PBXBuildFile;
 			fileRef = 4C5D6E7F8091A2B3C4D5E6F7 /* SafariGoogleSearchBar.swift */;
 		};
+		DD01000000000000000B0001 /* SafariDownload.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = DD01000000000000000A0001 /* SafariDownload.swift */;
+		};
+		DD02000000000000000B0002 /* SafariDownloadManager.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = DD02000000000000000A0002 /* SafariDownloadManager.swift */;
+		};
+		DD03000000000000000B0003 /* SafariDownloadsView.swift in Sources */ = {
+			isa = PBXBuildFile;
+			fileRef = DD03000000000000000A0003 /* SafariDownloadsView.swift */;
+		};
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -255,6 +267,27 @@
 			sourceTree = "<group>";
 		};
 
+		DD01000000000000000A0001 /* SafariDownload.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariDownload.swift;
+			sourceTree = "<group>";
+		};
+
+		DD02000000000000000A0002 /* SafariDownloadManager.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariDownloadManager.swift;
+			sourceTree = "<group>";
+		};
+
+		DD03000000000000000A0003 /* SafariDownloadsView.swift */ = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = SafariDownloadsView.swift;
+			sourceTree = "<group>";
+		};
+
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -315,6 +348,7 @@
 				0BDF6CA347E8414DA2D8C1CB /* SafariBookmark.swift */,
 				5CA5A03E030F4FEBBFE7BFEB /* SafariHistoryEntry.swift */,
 				B5988DF923E8406B85DD5CBF /* SafariTab.swift */,
+				DD01000000000000000A0001 /* SafariDownload.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -324,6 +358,7 @@
 			isa = PBXGroup;
 			children = (
 				E343E133CDB34AACB366768D /* SafariTabStore.swift */,
+				DD02000000000000000A0002 /* SafariDownloadManager.swift */,
 			);
 			path = Store;
 			sourceTree = "<group>";
@@ -355,6 +390,7 @@
 				2A3B4C5D6E7F8091A2B3C4D5 /* SafariSearchRow.swift */,
 				4C5D6E7F8091A2B3C4D5E6F7 /* SafariGoogleSearchBar.swift */,
 				AA11BB22CC33DD44EE550102 /* SafariControls.swift */,
+				DD03000000000000000A0003 /* SafariDownloadsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -443,6 +479,9 @@
 				3B4C5D6E7F8091A2B3C4D5E6 /* SafariGoogleSearchBar.swift in Sources */,
 				AA11BB22CC33DD44EE550001 /* OldOSKit.swift in Sources */,
 				AA11BB22CC33DD44EE550002 /* SafariControls.swift in Sources */,
+				DD01000000000000000B0001 /* SafariDownload.swift in Sources */,
+				DD02000000000000000B0002 /* SafariDownloadManager.swift in Sources */,
+				DD03000000000000000B0003 /* SafariDownloadsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
