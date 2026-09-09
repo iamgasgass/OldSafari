@@ -78,6 +78,16 @@ final class SafariDownloadManager: NSObject, ObservableObject {
         downloads.removeAll { !$0.isRunning }
     }
 
+    /// External-write API for callers that already produced a `SafariDownload`
+    /// (e.g. Save PDF to Files, blob-URL shim). Keeps `downloads` `private(set)`
+    /// so the list can only be mutated through the manager.
+    func register(_ entry: SafariDownload) {
+        DispatchQueue.main.async {
+            self.downloads.insert(entry, at: 0)
+            self.didStartDownload.send(entry)
+        }
+    }
+
     var runningCount: Int {
         downloads.filter { $0.isRunning }.count
     }
@@ -140,20 +150,20 @@ extension SafariDownloadManager: WKDownloadDelegate {
     func download(
         _ download: WKDownload,
         decideDestinationUsing response: URLResponse,
-        suggestedFilename: String,
-        completionHandler: @escaping (URL?) -> Void
-    ) {
+        suggestedFilename: String
+    ) async -> URL? {
         // Match the entry we created when the download started. It may not
         // have been posted to the main queue yet, so fall back to WKDownload
         // identity.
-        let entry = downloads.first(where: { $0.download === download })
+        let entry = await MainActor.run {
+            self.downloads.first(where: { $0.download === download })
+        }
 
         let name = entry?.suggestedFilename.isEmpty == false
             ? entry!.suggestedFilename
             : suggestedFilename
 
-        let destination = uniqueDestination(for: name)
-        completionHandler(destination)
+        return uniqueDestination(for: name)
     }
 
     func downloadDidFinish(_ download: WKDownload) {
