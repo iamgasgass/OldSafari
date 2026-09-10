@@ -87,11 +87,13 @@ struct SafariToolbar: View {
                         .overlay(alignment: .topTrailing) {
                             if downloadCount > 0 {
                                 DownloadBadge(count: downloadCount)
-                                    // FIX: y:11 sovrapponeva parzialmente il glifo
-                                    // dell'icona "condividi/azioni" sottostante.
-                                    // Spostando il badge un po' più in basso resta
-                                    // ancorato all'angolo senza coprire l'icona.
-                                    .offset(x: -6, y: 15)
+                                    // FIX (round 2): l'offset precedente (y:15)
+                                    // si sovrapponeva ancora leggermente al
+                                    // glifo. Spinto ulteriormente più in basso
+                                    // e verso l'esterno perché il badge resti
+                                    // ancorato solo all'angolo del pulsante,
+                                    // senza toccare l'icona sottostante.
+                                    .offset(x: -4, y: 20)
                                     .allowsHitTesting(false)
                             }
                         }

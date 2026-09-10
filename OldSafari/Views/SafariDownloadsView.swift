@@ -253,8 +253,8 @@ private struct DownloadRow: View {
 }
 
 /// Icon button matching OldOSRectangleButton's chrome (glossy gradient,
-/// recessed bevel, dark hairline border) instead of a bare vector glyph,
-/// so the 3 actions look identical to every other iOS 6 button in the app.
+/// recessed bevel, dark hairline border) so the 3 actions look identical to
+/// every other iOS 6 button in the app.
 private struct OldOSDownloadIconButton: View {
     enum Kind { case folder, share, trash, cancel }
 
@@ -271,8 +271,13 @@ private struct OldOSDownloadIconButton: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
+            // FIX: il glifo va disegnato in un riquadro 24x24 — è la misura
+            // per cui tutte le coordinate dei path in OldOSDownloadGlyph
+            // sono state scritte (es. x:21, y:h-4). Riducendolo a 17x17
+            // (round precedente) deformava i disegni: il cestino appariva
+            // come una bandierina rossa invece che come un cestino.
             OldOSDownloadGlyph(kind: kind, color: .white)
-                .frame(width: 17, height: 17)
+                .frame(width: 24, height: 24)
                 .frame(width: 32, height: 32)
                 .oldOSInnerShadowBackground(
                     RoundedRectangle(cornerRadius: 5.5),
