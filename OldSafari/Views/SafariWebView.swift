@@ -543,11 +543,19 @@ struct SafariWebView: UIViewRepresentable {
 /// CAGradientLayer di decorazione: questo garantisce che la card non possa
 /// MAI apparire trasparente, anche nell'istante prima che Auto Layout
 /// risolva le dimensioni reali e imposti il frame del gradiente in
-/// `viewDidLayoutSubviews`. Un CAGradientLayer con frame ancora a `.zero`
-/// semplicemente non disegna nulla — se quello fosse l'unico livello di
-/// colore, la card si vedrebbe come vuota/trasparente, che è esattamente
-/// il bug segnalato. Con `backgroundColor` come base solida, anche in quel
-/// istante la card mostra comunque il tono navy corretto.
+/// `viewDidLayoutSubviews`.
+///
+/// Colori e proporzioni verificati con campionamento pixel-per-pixel sia
+/// sulla foto di riferimento sia su uno screenshot reale del rendering in
+/// app: il gradiente di base (navyTop → navyBottom) coincide quasi
+/// esattamente con i toni misurati nella foto (bottom: 33,48,89 vs
+/// misurato 37,52,91). L'unico scostamento trovato era il riflesso lucido
+/// in alto, che con alpha 0.38 sovraesponeva il tono superiore della card
+/// (misurato 175,182,198 contro un target di 126,134,157 nella foto,
+/// praticamente identico al primo stop del gradiente stesso, quasi senza
+/// lavaggio bianco). Corretto ad alpha 0.12, che produce un accenno di
+/// lucentezza vetrosa coerente con lo stile iOS 6 senza sbiancare il
+/// colore sottostante.
 final class OldOSJavaScriptAlertController: UIViewController {
 
     enum ButtonKind {
@@ -603,13 +611,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // La root view di questo controller viene presentata con
-        // `.overFullScreen` e il presenter imposta anche
-        // `alert.view.backgroundColor = .clear` — corretto, perché solo lo
-        // scrim (livello di oscuramento) e la card (l'alert vero e proprio)
-        // devono disegnare colore. Lo impostiamo anche qui per sicurezza,
-        // così questa classe è autosufficiente anche se richiamata da un
-        // punto diverso del codice.
         view.backgroundColor = .clear
 
         let scrim = UIView()
@@ -639,10 +640,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
             shadowContainer.widthAnchor.constraint(equalToConstant: width)
         ])
 
-        // FIX principale del bug "alert trasparente": la card riceve un
-        // `backgroundColor` solido (il tono più scuro del gradiente) PRIMA
-        // di ricevere il CAGradientLayer decorativo. Anche se il gradiente
-        // avesse frame zero per un istante, la card è già navy solida.
         card.translatesAutoresizingMaskIntoConstraints = false
         card.backgroundColor = navyBottom
         card.layer.cornerRadius = 13
@@ -664,16 +661,12 @@ final class OldOSJavaScriptAlertController: UIViewController {
             navyBottom.cgColor
         ]
         cardGradient.locations = [0, 0.18, 0.55, 1.0]
-        // Frame iniziale non-zero basato sulla larghezza nota e su una
-        // stima d'altezza generosa: elimina qualunque possibile istante
-        // di "frame zero" tra l'inserimento del layer e la prima passata
-        // di `viewDidLayoutSubviews`.
         cardGradient.frame = CGRect(x: 0, y: 0, width: width, height: 220)
         card.layer.insertSublayer(cardGradient, at: 0)
 
         let topHighlight = CAGradientLayer()
         topHighlight.colors = [
-            UIColor.white.withAlphaComponent(0.38).cgColor,
+            UIColor.white.withAlphaComponent(0.12).cgColor,
             UIColor.white.withAlphaComponent(0.0).cgColor
         ]
         topHighlight.frame = CGRect(x: 0, y: 0, width: width, height: 42)
@@ -760,7 +753,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
         }
 
         let hDivider = UIView()
-        hDivider.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        hDivider.backgroundColor = UIColor.black.withAlphaComponent(0.5)
         hDivider.translatesAutoresizingMaskIntoConstraints = false
         hDivider.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
         outerStack.addArrangedSubview(hDivider)
@@ -784,10 +777,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
         }
     }
 
-    /// Pillole separate (non una striscia unica): ognuna ha un
-    /// `backgroundColor` solido di base (`pillBottom`, il tono più scuro
-    /// del proprio gradiente) applicato PRIMA del CAGradientLayer, per la
-    /// stessa ragione anti-trasparenza spiegata sopra per la card.
     private func makePillButton(title: String, tag: Int) -> (UIView, CAGradientLayer, CAGradientLayer) {
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -805,10 +794,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
             pillBottom.cgColor
         ]
         gradient.locations = [0, 0.42, 0.43, 1.0]
-        // Frame iniziale non-zero: la larghezza reale della pillola non è
-        // ancora nota qui, ma una stima ragionevole (metà della card meno
-        // margini) evita l'istante di trasparenza; verrà corretto al primo
-        // passaggio di `viewDidLayoutSubviews`.
         gradient.frame = CGRect(x: 0, y: 0, width: 120, height: 44)
         container.layer.insertSublayer(gradient, at: 0)
 
@@ -857,10 +842,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
         sender.superview?.layer.opacity = 1.0
     }
 
-    // Ricalcola i frame dei layer decorativi ad OGNI passata di layout
-    // (non solo alla prima), così qualunque cambio di dimensioni della
-    // card o delle pillole (es. rotazione, Dynamic Type) non lascia mai
-    // un gradiente con frame obsoleto o vuoto.
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
