@@ -69,6 +69,15 @@ final class SafariDownload: NSObject, ObservableObject, Identifiable {
         }
     }
 
+    /// Records the exact filesystem destination chosen by WKDownload.
+    /// Keeping this alongside the entry prevents completion from accidentally
+    /// resolving to an older file with the same suggested filename.
+    func setDestination(_ url: URL) {
+        DispatchQueue.main.async {
+            self.destinationURL = url
+        }
+    }
+
     func markCompleted(at url: URL) {
         DispatchQueue.main.async {
             self.destinationURL = url
