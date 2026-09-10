@@ -184,11 +184,30 @@ struct SafariWebView: UIViewRepresentable {
 
             if isAttachment || notRenderable || downloadishMIME {
                 let suggested = filenameHint(response: response, url: requestURL)
-                // Prime the download entry so the manager can match it up
-                // when WKDownload calls back. WKWebView will hand us the
-                // real `WKDownload` in `navigationResponseDidBecomeDownload`.
-                pendingHint = (suggested, requestURL)
-                decisionHandler(.download)
+
+                // Modern Safari always confirms with the user before a
+                // download actually starts ("<Site> would like to download
+                // ‘file’ from <host>. Do you want to allow this?"). The
+                // previous implementation skipped straight to
+                // `decisionHandler(.download)`, so files started downloading
+                // silently and immediately — no alert, no way to cancel.
+                // We now show the classic iOS 6 styled confirmation first,
+                // and only call `.download` if the user taps "Download".
+                presentOldOSAlert(
+                    title: requestURL.host,
+                    message: "Do you want to download \"\(suggested)\"?",
+                    buttons: [("Cancel", .cancel), ("Download", .default)]
+                ) { [weak self] _, index in
+                    guard index == 1 else {
+                        decisionHandler(.cancel)
+                        return
+                    }
+                    // Prime the download entry so the manager can match it
+                    // up when WKDownload calls back. WKWebView will hand us
+                    // the real `WKDownload` in `didBecome download:`.
+                    self?.pendingHint = (suggested, requestURL)
+                    decisionHandler(.download)
+                }
                 return
             }
 
@@ -525,14 +544,10 @@ struct SafariWebView: UIViewRepresentable {
 }
 
 
-/// Replica fedele dell'alert di sistema iOS 6 (rif. foto "Data Isolation" /
-/// permessi localizzazione): card blu navy con gradiente verticale, doppio
-/// bordo (scuro esterno + rim chiaro interno), riflesso lucido diagonale,
-/// ombra portata sullo sfondo scurito, testo bianco con ombra "incisa" verso
-/// il basso, e due pulsanti come PILLOLE SEPARATE (proprio gradiente più
-/// chiaro, angoli propri, margine tra loro e dal bordo della card) — non una
-/// striscia unica. Non usa UIAlertController perché quel controllo adotta il
-/// linguaggio visivo di iOS moderno e non può replicare il chrome originale.
+/// A small, self-contained recreation of the iOS 6 JavaScript alert surface.
+/// It intentionally does not use UIAlertController: that control adopts the
+/// current iOS visual language and therefore cannot reproduce the old Safari
+/// alert chrome.
 final class OldOSJavaScriptAlertController: UIViewController {
 
     enum ButtonKind {
@@ -547,13 +562,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
     private let completion: (String?, Int) -> Void
     private var didFinish = false
     private weak var input: UITextField?
-
-    private let card = UIView()
-    private let cardGradient = CAGradientLayer()
-    private var topHighlightLayer: CAGradientLayer?
-    private var rimLayer: CAShapeLayer?
-    private var buttonGradients: [(CAGradientLayer, CAGradientLayer)] = []
-    private var buttonContainers: [UIView] = []
 
     init(
         title: String?,
@@ -577,7 +585,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
         super.viewDidLoad()
 
         let scrim = UIView()
-        scrim.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        scrim.backgroundColor = UIColor.black.withAlphaComponent(0.48)
         scrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrim)
         NSLayoutConstraint.activate([
@@ -587,107 +595,63 @@ final class OldOSJavaScriptAlertController: UIViewController {
             scrim.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        let shadowContainer = UIView()
-        shadowContainer.translatesAutoresizingMaskIntoConstraints = false
-        shadowContainer.layer.shadowColor = UIColor.black.cgColor
-        shadowContainer.layer.shadowOpacity = 0.6
-        shadowContainer.layer.shadowRadius = 14
-        shadowContainer.layer.shadowOffset = CGSize(width: 0, height: 8)
-        view.addSubview(shadowContainer)
-
-        let width = min(UIScreen.main.bounds.width - 56, 270)
-        NSLayoutConstraint.activate([
-            shadowContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            shadowContainer.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            shadowContainer.widthAnchor.constraint(equalToConstant: width)
-        ])
-
+        let card = UIView()
         card.translatesAutoresizingMaskIntoConstraints = false
-        card.layer.cornerRadius = 13
+        card.layer.cornerRadius = 10
         card.layer.masksToBounds = true
         card.layer.borderWidth = 1
-        card.layer.borderColor = UIColor(white: 0.05, alpha: 0.9).cgColor
-        shadowContainer.addSubview(card)
+        card.layer.borderColor = UIColor(white: 0.08, alpha: 0.85).cgColor
+        card.backgroundColor = UIColor(white: 0.91, alpha: 1)
+        view.addSubview(card)
+
+        let width = min(UIScreen.main.bounds.width - 40, 280)
         NSLayoutConstraint.activate([
-            card.leadingAnchor.constraint(equalTo: shadowContainer.leadingAnchor),
-            card.trailingAnchor.constraint(equalTo: shadowContainer.trailingAnchor),
-            card.topAnchor.constraint(equalTo: shadowContainer.topAnchor),
-            card.bottomAnchor.constraint(equalTo: shadowContainer.bottomAnchor)
+            card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            card.widthAnchor.constraint(equalToConstant: width)
         ])
 
-        // Gradiente verticale blu navy campionato dalla foto di riferimento:
-        // blu-grigio chiaro in alto, navy scuro in basso, continuum unico.
-        cardGradient.colors = [
-            UIColor(red: 126 / 255, green: 138 / 255, blue: 163 / 255, alpha: 1).cgColor,
-            UIColor(red: 79 / 255,  green: 95 / 255,  blue: 130 / 255, alpha: 1).cgColor,
-            UIColor(red: 40 / 255,  green: 55 / 255,  blue: 92 / 255,  alpha: 1).cgColor,
-            UIColor(red: 33 / 255,  green: 48 / 255,  blue: 89 / 255,  alpha: 1).cgColor
+        let topGradient = CAGradientLayer()
+        topGradient.colors = [
+            UIColor(white: 0.98, alpha: 1).cgColor,
+            UIColor(white: 0.78, alpha: 1).cgColor
         ]
-        cardGradient.locations = [0, 0.18, 0.55, 1.0]
-        card.layer.insertSublayer(cardGradient, at: 0)
+        topGradient.locations = [0, 1]
+        topGradient.frame = CGRect(x: 0, y: 0, width: width, height: 1)
+        card.layer.addSublayer(topGradient)
 
-        let topHighlight = CAGradientLayer()
-        topHighlight.colors = [
-            UIColor.white.withAlphaComponent(0.38).cgColor,
-            UIColor.white.withAlphaComponent(0.0).cgColor
-        ]
-        card.layer.insertSublayer(topHighlight, above: cardGradient)
-        self.topHighlightLayer = topHighlight
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
 
-        let rim = CAShapeLayer()
-        rim.fillColor = UIColor.clear.cgColor
-        rim.strokeColor = UIColor.white.withAlphaComponent(0.3).cgColor
-        rim.lineWidth = 1
-        card.layer.addSublayer(rim)
-        self.rimLayer = rim
-
-        let outerStack = UIStackView()
-        outerStack.axis = .vertical
-        outerStack.spacing = 0
-        outerStack.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(outerStack)
         NSLayoutConstraint.activate([
-            outerStack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
-            outerStack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
-            outerStack.topAnchor.constraint(equalTo: card.topAnchor),
-            outerStack.bottomAnchor.constraint(equalTo: card.bottomAnchor)
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: card.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor)
         ])
-
-        let textStack = UIStackView()
-        textStack.axis = .vertical
-        textStack.spacing = 6
-        textStack.isLayoutMarginsRelativeArrangement = true
-        textStack.layoutMargins = UIEdgeInsets(top: 18, left: 16, bottom: 16, right: 16)
-        outerStack.addArrangedSubview(textStack)
 
         let titleLabel = UILabel()
         titleLabel.text = alertTitle?.isEmpty == false ? alertTitle : "Safari"
         titleLabel.textAlignment = .center
-        titleLabel.font = UIFont(name: "HelveticaNeue-Bold", size: 17) ?? .boldSystemFont(ofSize: 17)
-        titleLabel.textColor = .white
+        titleLabel.font = UIFont(name: "HelveticaNeue-Bold", size: 18) ?? .boldSystemFont(ofSize: 18)
+        titleLabel.textColor = .black
         titleLabel.numberOfLines = 2
-        titleLabel.layer.shadowColor = UIColor.black.withAlphaComponent(0.55).cgColor
-        titleLabel.layer.shadowOffset = CGSize(width: 0, height: 1)
-        titleLabel.layer.shadowOpacity = 1
-        titleLabel.layer.shadowRadius = 0
-        titleLabel.layer.shouldRasterize = true
-        titleLabel.layer.rasterizationScale = UIScreen.main.scale
-        textStack.addArrangedSubview(titleLabel)
+        titleLabel.setContentHuggingPriority(.required, for: .vertical)
+        titleLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
+        stack.addArrangedSubview(titleLabel)
 
         let messageLabel = UILabel()
         messageLabel.text = message
         messageLabel.textAlignment = .center
-        messageLabel.font = UIFont(name: "HelveticaNeue", size: 14) ?? .systemFont(ofSize: 14)
-        messageLabel.textColor = .white
+        messageLabel.font = UIFont(name: "HelveticaNeue", size: 15) ?? .systemFont(ofSize: 15)
+        messageLabel.textColor = UIColor(white: 0.12, alpha: 1)
         messageLabel.numberOfLines = 0
         messageLabel.lineBreakMode = .byWordWrapping
-        messageLabel.layer.shadowColor = UIColor.black.withAlphaComponent(0.5).cgColor
-        messageLabel.layer.shadowOffset = CGSize(width: 0, height: 1)
-        messageLabel.layer.shadowOpacity = 1
-        messageLabel.layer.shadowRadius = 0
-        messageLabel.layer.shouldRasterize = true
-        messageLabel.layer.rasterizationScale = UIScreen.main.scale
-        textStack.addArrangedSubview(messageLabel)
+        messageLabel.layoutMargins = UIEdgeInsets(top: 0, left: 18, bottom: 10, right: 18)
+        stack.addArrangedSubview(messageLabel)
 
         if let initialText {
             let field = UITextField()
@@ -697,126 +661,40 @@ final class OldOSJavaScriptAlertController: UIViewController {
             field.backgroundColor = .white
             field.layer.cornerRadius = 6
             field.layer.borderWidth = 1
-            field.layer.borderColor = UIColor(white: 0.25, alpha: 1).cgColor
+            field.layer.borderColor = UIColor(white: 0.55, alpha: 1).cgColor
             field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 7, height: 1))
             field.leftViewMode = .always
             field.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 7, height: 1))
             field.rightViewMode = .always
             field.heightAnchor.constraint(equalToConstant: 32).isActive = true
             field.translatesAutoresizingMaskIntoConstraints = false
-            textStack.setCustomSpacing(10, after: messageLabel)
-            textStack.addArrangedSubview(field)
+            stack.setCustomSpacing(10, after: messageLabel)
+            stack.addArrangedSubview(field)
             input = field
         }
 
-        let hDivider = UIView()
-        hDivider.backgroundColor = UIColor.black.withAlphaComponent(0.35)
-        hDivider.translatesAutoresizingMaskIntoConstraints = false
-        hDivider.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
-        outerStack.addArrangedSubview(hDivider)
+        let separator = UIView()
+        separator.backgroundColor = UIColor(white: 0.67, alpha: 1)
+        separator.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
+        stack.addArrangedSubview(separator)
 
         let buttonRow = UIStackView()
         buttonRow.axis = .horizontal
-        buttonRow.spacing = 8
         buttonRow.distribution = .fillEqually
-        buttonRow.isLayoutMarginsRelativeArrangement = true
-        buttonRow.layoutMargins = UIEdgeInsets(top: 10, left: 10, bottom: 12, right: 10)
-        buttonRow.translatesAutoresizingMaskIntoConstraints = false
-        outerStack.addArrangedSubview(buttonRow)
-        buttonRow.heightAnchor.constraint(equalToConstant: 66).isActive = true
+        buttonRow.spacing = 1 / UIScreen.main.scale
+        buttonRow.backgroundColor = UIColor(white: 0.67, alpha: 1)
+        buttonRow.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        stack.addArrangedSubview(buttonRow)
 
         for (index, item) in buttons.enumerated() {
-            let (pill, gradient, highlight) = makePillButton(title: item.0, tag: index)
-            buttonRow.addArrangedSubview(pill)
-            buttonContainers.append(pill)
-            buttonGradients.append((gradient, highlight))
-        }
-    }
-
-    private func makePillButton(title: String, tag: Int) -> (UIView, CAGradientLayer, CAGradientLayer) {
-        let container = UIView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.layer.cornerRadius = 8
-        container.layer.masksToBounds = true
-        container.layer.borderWidth = 1 / UIScreen.main.scale
-        container.layer.borderColor = UIColor(white: 0.02, alpha: 0.85).cgColor
-
-        let gradient = CAGradientLayer()
-        gradient.colors = [
-            UIColor(red: 173 / 255, green: 181 / 255, blue: 199 / 255, alpha: 1).cgColor,
-            UIColor(red: 130 / 255, green: 141 / 255, blue: 164 / 255, alpha: 1).cgColor,
-            UIColor(red: 96 / 255,  green: 108 / 255, blue: 136 / 255, alpha: 1).cgColor,
-            UIColor(red: 72 / 255,  green: 85 / 255,  blue: 116 / 255, alpha: 1).cgColor
-        ]
-        gradient.locations = [0, 0.42, 0.43, 1.0]
-        container.layer.insertSublayer(gradient, at: 0)
-
-        let highlight = CAGradientLayer()
-        highlight.colors = [
-            UIColor.white.withAlphaComponent(0.45).cgColor,
-            UIColor.white.withAlphaComponent(0.0).cgColor
-        ]
-        container.layer.insertSublayer(highlight, above: gradient)
-
-        let button = UIButton(type: .custom)
-        button.tag = tag
-        button.setTitle(title, for: .normal)
-        button.titleLabel?.font = UIFont(name: "HelveticaNeue-Bold", size: 18) ?? .boldSystemFont(ofSize: 18)
-        button.setTitleColor(.white, for: .normal)
-        button.setTitleColor(UIColor.white.withAlphaComponent(0.55), for: .highlighted)
-        button.titleLabel?.layer.shadowColor = UIColor.black.withAlphaComponent(0.6).cgColor
-        button.titleLabel?.layer.shadowOffset = CGSize(width: 0, height: 1)
-        button.titleLabel?.layer.shadowOpacity = 1
-        button.titleLabel?.layer.shadowRadius = 0
-        button.titleLabel?.layer.shouldRasterize = true
-        button.titleLabel?.layer.rasterizationScale = UIScreen.main.scale
-        button.backgroundColor = .clear
-        button.addTarget(self, action: #selector(handleButton(_:)), for: .touchUpInside)
-        button.addTarget(self, action: #selector(handlePillHighlight(_:)), for: [.touchDown, .touchDragEnter])
-        button.addTarget(self, action: #selector(handlePillUnhighlight(_:)), for: [.touchDragExit, .touchCancel, .touchUpInside, .touchUpOutside])
-        button.translatesAutoresizingMaskIntoConstraints = false
-
-        container.addSubview(button)
-        NSLayoutConstraint.activate([
-            button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            button.topAnchor.constraint(equalTo: container.topAnchor),
-            button.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-        ])
-
-        return (container, gradient, highlight)
-    }
-
-    @objc private func handlePillHighlight(_ sender: UIButton) {
-        sender.superview?.layer.opacity = 0.7
-    }
-
-    @objc private func handlePillUnhighlight(_ sender: UIButton) {
-        sender.superview?.layer.opacity = 1.0
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        cardGradient.frame = card.bounds
-        topHighlightLayer?.frame = CGRect(
-            x: 0, y: 0,
-            width: card.bounds.width,
-            height: min(card.bounds.height * 0.42, 42)
-        )
-        rimLayer?.frame = card.bounds
-        rimLayer?.path = UIBezierPath(
-            roundedRect: card.bounds.insetBy(dx: 1.5, dy: 1.5),
-            cornerRadius: 11.5
-        ).cgPath
-
-        for (index, container) in buttonContainers.enumerated() {
-            let (gradient, highlight) = buttonGradients[index]
-            gradient.frame = container.bounds
-            highlight.frame = CGRect(
-                x: 0, y: 0,
-                width: container.bounds.width,
-                height: container.bounds.height * 0.5
-            )
+            let button = UIButton(type: .custom)
+            button.tag = index
+            button.setTitle(item.0, for: .normal)
+            button.titleLabel?.font = UIFont(name: "HelveticaNeue-Bold", size: 17) ?? .boldSystemFont(ofSize: 17)
+            button.setTitleColor(item.1 == .cancel ? UIColor(white: 0.18, alpha: 1) : UIColor(red: 0.05, green: 0.32, blue: 0.67, alpha: 1), for: .normal)
+            button.backgroundColor = UIColor(white: 0.91, alpha: 1)
+            button.addTarget(self, action: #selector(handleButton(_:)), for: .touchUpInside)
+            buttonRow.addArrangedSubview(button)
         }
     }
 
