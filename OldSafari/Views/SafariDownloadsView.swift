@@ -271,11 +271,6 @@ private struct OldOSDownloadIconButton: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
-            // FIX: il glifo va disegnato in un riquadro 24x24 — è la misura
-            // per cui tutte le coordinate dei path in OldOSDownloadGlyph
-            // sono state scritte (es. x:21, y:h-4). Riducendolo a 17x17
-            // (round precedente) deformava i disegni: il cestino appariva
-            // come una bandierina rossa invece che come un cestino.
             OldOSDownloadGlyph(kind: kind, color: .white)
                 .frame(width: 24, height: 24)
                 .frame(width: 32, height: 32)
@@ -294,6 +289,10 @@ private struct OldOSDownloadIconButton: View {
     }
 }
 
+/// Glifi ridisegnati "maniacalmente" fedeli allo stile iOS 6: tratti pieni
+/// e spessi (non sottili come SF Symbols), forme geometriche semplici e
+/// simmetriche entro un riquadro 24x24 con margine costante di 3pt su ogni
+/// lato (area utile 18x18), esattamente come i glifi UIToolbar dell'epoca.
 private struct OldOSDownloadGlyph: View {
     let kind: OldOSDownloadIconButton.Kind
     let color: Color
@@ -302,65 +301,99 @@ private struct OldOSDownloadGlyph: View {
         Canvas { context, size in
             let stroke = color
             var path = Path()
-            let w = size.width
-            let h = size.height
+            // Riquadro utile centrato 18x18 dentro una canvas 24x24.
+            let m: CGFloat = 3
+            let w = size.width - m
+            let h = size.height - m
 
             switch kind {
             case .folder:
-                path.move(to: CGPoint(x: 2, y: 7))
-                path.addLine(to: CGPoint(x: 9, y: 7))
-                path.addLine(to: CGPoint(x: 11, y: 9))
-                path.addLine(to: CGPoint(x: w - 2, y: 9))
-                path.addLine(to: CGPoint(x: w - 2, y: h - 4))
-                path.addLine(to: CGPoint(x: 2, y: h - 4))
+                // Cartella classica: corpo + linguetta superiore, forma
+                // simmetrica rispetto al centro orizzontale.
+                path.move(to: CGPoint(x: m, y: m + 3))
+                path.addLine(to: CGPoint(x: m + 6, y: m + 3))
+                path.addLine(to: CGPoint(x: m + 8, y: m + 5.5))
+                path.addLine(to: CGPoint(x: w, y: m + 5.5))
+                path.addLine(to: CGPoint(x: w, y: h))
+                path.addLine(to: CGPoint(x: m, y: h))
                 path.closeSubpath()
                 context.stroke(
                     path,
                     with: .color(stroke),
-                    style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
                 )
 
             case .share:
-                path.move(to: CGPoint(x: 12, y: h - 3))
-                path.addLine(to: CGPoint(x: 12, y: 8))
-                path.move(to: CGPoint(x: 8, y: 12))
-                path.addLine(to: CGPoint(x: 12, y: 8))
-                path.addLine(to: CGPoint(x: 16, y: 12))
-                path.move(to: CGPoint(x: 5, y: 12))
-                path.addLine(to: CGPoint(x: 5, y: h - 3))
-                path.addLine(to: CGPoint(x: 19, y: h - 3))
-                path.addLine(to: CGPoint(x: 19, y: 12))
+                // L'iconica "action" glyph di iOS 6: un riquadro aperto in
+                // alto con una freccia che ne esce verso l'alto — il glifo
+                // di condivisione/azione più riconoscibile dell'epoca.
+                let midX = (m + w) / 2
+                let boxTop = m + 9
+                path.move(to: CGPoint(x: m, y: boxTop))
+                path.addLine(to: CGPoint(x: m, y: h))
+                path.addLine(to: CGPoint(x: w, y: h))
+                path.addLine(to: CGPoint(x: w, y: boxTop))
                 context.stroke(
                     path,
                     with: .color(stroke),
-                    style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                )
+
+                var arrow = Path()
+                arrow.move(to: CGPoint(x: midX, y: h - 5))
+                arrow.addLine(to: CGPoint(x: midX, y: m))
+                arrow.move(to: CGPoint(x: midX - 4, y: m + 4))
+                arrow.addLine(to: CGPoint(x: midX, y: m))
+                arrow.addLine(to: CGPoint(x: midX + 4, y: m + 4))
+                context.stroke(
+                    arrow,
+                    with: .color(stroke),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
                 )
 
             case .trash:
+                // Cestino classico: coperchio + maniglia + corpo con 3
+                // linee verticali interne, come l'icona iOS 6 originale.
+                let bodyTop = m + 5
                 path.addRoundedRect(
-                    in: CGRect(x: 5, y: 6, width: 14, height: 15),
+                    in: CGRect(x: m + 1, y: bodyTop, width: w - m - 2, height: h - bodyTop),
                     cornerSize: CGSize(width: 1.5, height: 1.5)
                 )
-                path.move(to: CGPoint(x: 3, y: 6))
-                path.addLine(to: CGPoint(x: 21, y: 6))
-                path.move(to: CGPoint(x: 9, y: 3))
-                path.addLine(to: CGPoint(x: 15, y: 3))
-                path.addLine(to: CGPoint(x: 16, y: 6))
+                path.move(to: CGPoint(x: m - 0.5, y: bodyTop))
+                path.addLine(to: CGPoint(x: w + 0.5, y: bodyTop))
+                path.move(to: CGPoint(x: m + 6, y: bodyTop))
+                path.addLine(to: CGPoint(x: m + 7, y: m + 1))
+                path.addLine(to: CGPoint(x: w - 7, y: m + 1))
+                path.addLine(to: CGPoint(x: w - 6, y: bodyTop))
                 context.stroke(
                     path,
                     with: .color(stroke),
                     style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
                 )
 
+                var lines = Path()
+                let innerTop = bodyTop + 3
+                let innerBottom = h - 3
+                for i in 0..<3 {
+                    let x = m + 4 + CGFloat(i) * ((w - m - 8) / 2)
+                    lines.move(to: CGPoint(x: x, y: innerTop))
+                    lines.addLine(to: CGPoint(x: x, y: innerBottom))
+                }
+                context.stroke(
+                    lines,
+                    with: .color(stroke),
+                    style: StrokeStyle(lineWidth: 1.2, lineCap: .round)
+                )
+
             case .cancel:
-                path.move(to: CGPoint(x: 6, y: 6))
-                path.addLine(to: CGPoint(x: 18, y: 18))
-                path.move(to: CGPoint(x: 18, y: 6))
-                path.addLine(to: CGPoint(x: 6, y: 18))
+                path.move(to: CGPoint(x: m + 1, y: m + 1))
+                path.addLine(to: CGPoint(x: w - 1, y: h - 1))
+                path.move(to: CGPoint(x: w - 1, y: m + 1))
+                path.addLine(to: CGPoint(x: m + 1, y: h - 1))
                 context.stroke(
                     path,
                     with: .color(stroke),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round)
                 )
             }
         }

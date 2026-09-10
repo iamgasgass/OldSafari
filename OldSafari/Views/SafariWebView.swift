@@ -21,17 +21,20 @@ struct SafariWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: "oldSafariContextMenu")
         controller.addUserScript(
             WKUserScript(
-                // FIX BUG "Salva immagine non salva nulla": la versione
-                // precedente intercettava l'immagine SOLO sull'evento JS
-                // "contextmenu" e la spediva a Swift con un postMessage
-                // asincrono, sperando che arrivasse prima che il menu nativo
-                // venisse costruito — una race condition reale, non garantita.
-                // Ora invece registriamo l'ultima immagine toccata già al
-                // "touchstart" (che scatta subito al contatto del dito, ben
-                // prima che il long press di ~500ms faccia comparire il menu)
-                // dentro una variabile globale che Swift interroga in modo
-                // sincrono con evaluateJavaScript nel momento esatto in cui
-                // serve — zero race condition, zero attesa "a caso".
+                // FIX BUG "Salva immagine non salva nulla" — canale DOPPIO:
+                // 1) `window.__oldSafariLastImageSrc` viene letta in modo
+                //    sincrono da Swift via evaluateJavaScript, ma questo
+                //    funziona solo se l'immagine sta nel FRAME PRINCIPALE.
+                // 2) Il postMessage raggiunge invece sempre l'handler nativo
+                //    da QUALSIASI frame/iframe della pagina (il gestore è
+                //    condiviso), quindi copre anche le immagini annidate in
+                //    iframe che il canale 1 non vede. Usiamo entrambi e
+                //    prendiamo qualunque valore non vuoto sia disponibile.
+                // In più registriamo già al "touchstart" (istantaneo al
+                // contatto del dito) e non solo al "contextmenu" del DOM,
+                // così il valore è pronto ben prima che il long press di
+                // ~500ms faccia comparire il menu nativo — nessuna race
+                // condition residua.
                 source: """
                 (function() {
                   if (window.__oldSafariContextMenuInstalled) return;
@@ -46,17 +49,24 @@ struct SafariWebView: UIViewRepresentable {
                     return image.currentSrc || image.src || image.getAttribute('src') || null;
                   }
 
+                  function report(src) {
+                    window.__oldSafariLastImageSrc = src;
+                    try {
+                      window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: src});
+                    } catch (e) {}
+                  }
+
                   document.addEventListener('touchstart', function(event) {
                     var t = event.touches && event.touches[0];
                     if (!t) return;
-                    window.__oldSafariLastImageSrc = resolveImage(t.clientX, t.clientY);
+                    report(resolveImage(t.clientX, t.clientY));
                   }, true);
 
                   document.addEventListener('contextmenu', function(event) {
                     var node = event.target;
                     var image = node && node.closest ? node.closest('img') : null;
                     if (image) {
-                      window.__oldSafariLastImageSrc = image.currentSrc || image.src || image.getAttribute('src') || null;
+                      report(image.currentSrc || image.src || image.getAttribute('src') || null);
                     }
                   }, true);
                 })();
@@ -108,6 +118,8 @@ struct SafariWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var onOpenInNewTab: ((URL) -> Void)?
+        /// Canale di backup (via postMessage), popolato anche da iframe.
+        private var contextMenuImageURL: URL?
 
         @objc func handleRefresh(_ control: UIRefreshControl) {
             webView?.reload()
@@ -117,8 +129,15 @@ struct SafariWebView: UIViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            // Non più usato per l'immagine (ora letta via evaluateJavaScript),
-            // ma il canale resta registrato per compatibilità futura.
+            guard message.name == "oldSafariContextMenu" else { return }
+            if let payload = message.body as? [String: Any],
+               let raw = payload["src"] as? String,
+               !raw.isEmpty,
+               let url = URL(string: raw) {
+                contextMenuImageURL = url
+            } else {
+                contextMenuImageURL = nil
+            }
         }
 
         func webView(
@@ -187,7 +206,11 @@ struct SafariWebView: UIViewRepresentable {
         /// The response phase is where WebKit tells us the MIME type and
         /// headers. Anything the browser cannot render inline (attachment,
         /// unknown MIME, application/octet-stream) is redirected to the
-        /// download machinery, exactly like the current Safari does.
+        /// download machinery, exactly like the current Safari does — but
+        /// FIRST we ask the user for confirmation with an iOS 6-style alert,
+        /// mirroring the "Do you want to download…?" prompt modern Safari
+        /// shows (era completamente assente: il download partiva subito
+        /// senza alcun alert).
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -215,11 +238,20 @@ struct SafariWebView: UIViewRepresentable {
 
             if isAttachment || notRenderable || downloadishMIME {
                 let suggested = filenameHint(response: response, url: requestURL)
-                // Prime the download entry so the manager can match it up
-                // when WKDownload calls back. WKWebView will hand us the
-                // real `WKDownload` in `navigationResponseDidBecomeDownload`.
-                pendingHint = (suggested, requestURL)
-                decisionHandler(.download)
+                let host = requestURL.host ?? "this server"
+
+                presentOldOSAlert(
+                    title: "Safari",
+                    message: "Do you want to download \"\(suggested)\" from \"\(host)\"?",
+                    buttons: [("Cancel", .cancel), ("Download", .default)]
+                ) { [weak self] _, index in
+                    guard index == 1 else {
+                        decisionHandler(.cancel)
+                        return
+                    }
+                    self?.pendingHint = (suggested, requestURL)
+                    decisionHandler(.download)
+                }
                 return
             }
 
@@ -447,21 +479,18 @@ struct SafariWebView: UIViewRepresentable {
             let linkURL = elementInfo.linkURL
             let pageURL = webView.url
 
-            // FIX BUG "Salva immagine non salva nulla", root cause definitiva:
-            // WKContextMenuElementInfo non espone MAI l'URL di un'immagine
-            // (solo linkURL). La versione precedente lo intercettava con un
-            // messaggio JS asincrono e sperava arrivasse in tempo — una race
-            // condition non garantita. Ora interroghiamo SINCRONAMENTE (dal
-            // punto di vista del chiamante: aspettiamo la risposta prima di
-            // costruire il menu) la variabile JS aggiornata già al
-            // "touchstart", cioè ben prima che il long press di ~500ms faccia
-            // scattare questo delegate. Nessuna scommessa sui tempi.
+            // FIX BUG "Salva immagine non salva nulla", canale doppio:
+            // proviamo prima a leggere la variabile JS globale (rapido, ma
+            // funziona solo nel frame principale), e se è vuota usiamo il
+            // valore arrivato via postMessage (funziona anche da iframe).
             webView.evaluateJavaScript("window.__oldSafariLastImageSrc || ''") { [weak self] result, _ in
                 guard let self else {
                     completionHandler(nil)
                     return
                 }
-                let imageURL = (result as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
+                let pulled = (result as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
+                let imageURL = pulled ?? self.contextMenuImageURL
+                self.contextMenuImageURL = nil
 
                 guard linkURL != nil || imageURL != nil else {
                     completionHandler(nil)
