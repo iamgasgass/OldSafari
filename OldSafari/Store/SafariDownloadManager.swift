@@ -163,7 +163,9 @@ extension SafariDownloadManager: WKDownloadDelegate {
             ? entry!.suggestedFilename
             : suggestedFilename
 
-        return uniqueDestination(for: name)
+        let destination = uniqueDestination(for: name)
+        entry?.setDestination(destination)
+        return destination
     }
 
     func downloadDidFinish(_ download: WKDownload) {
@@ -174,10 +176,12 @@ extension SafariDownloadManager: WKDownloadDelegate {
                 received: progress.completedUnitCount,
                 expected: progress.totalUnitCount
             )
-            if let path = destinationURL(for: entry) {
+            if let path = entry.destinationURL, FileManager.default.fileExists(atPath: path.path) {
+                entry.markCompleted(at: path)
+            } else if let path = destinationURL(for: entry) {
                 entry.markCompleted(at: path)
             } else {
-                entry.markCompleted(at: downloadsDirectory)
+                entry.markFailed("Downloaded file could not be located")
             }
         }
         stopObserving(download)
