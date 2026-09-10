@@ -74,7 +74,18 @@ final class SafariDownloadManager: NSObject, ObservableObject {
         }
     }
 
+    /// Removes every non-running entry from the list AND deletes its file
+    /// from the Downloads directory on disk. The previous implementation
+    /// only mutated the in-memory `downloads` array, so "Clear" appeared to
+    /// work in the UI while every finished file silently stayed on disk
+    /// forever, slowly filling up the app's document container.
     func clearFinished() {
+        let finished = downloads.filter { !$0.isRunning }
+        for entry in finished {
+            if let url = entry.destinationURL {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
         downloads.removeAll { !$0.isRunning }
     }
 
