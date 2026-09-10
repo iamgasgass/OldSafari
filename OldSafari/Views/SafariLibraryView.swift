@@ -168,12 +168,7 @@ struct SafariLibraryView: View {
                 emptyState(title: "No Bookmarks", subtitle: "Bookmarks you add appear here.")
             }
         }
-        .background(
-            ZStack {
-                theme.listBackground
-                OldOSTableFiller(theme: theme)
-            }
-        )
+        .background(theme.listBackground)
     }
 
     // MARK: History
@@ -238,12 +233,7 @@ struct SafariLibraryView: View {
                 }
             }
         }
-        .background(
-            ZStack {
-                theme.listBackground
-                OldOSTableFiller(theme: theme)
-            }
-        )
+        .background(theme.listBackground)
     }
 
     private func sectionHeader(_ label: String) -> some View {

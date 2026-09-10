@@ -86,7 +86,7 @@ struct SafariToolbar: View {
                         .overlay(alignment: .topTrailing) {
                             if downloadCount > 0 {
                                 DownloadBadge(count: downloadCount)
-                                    .offset(x: -8, y: 6)
+                                    .offset(x: -8, y: 11)
                                     .allowsHitTesting(false)
                             }
                         }

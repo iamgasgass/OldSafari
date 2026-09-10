@@ -104,12 +104,7 @@ struct SafariDownloadsView: View {
                 )
             }
         }
-        .background(
-            ZStack {
-                theme.listBackground
-                OldOSTableFiller(theme: theme)
-            }
-        )
+        .background(theme.listBackground)
     }
 
     /// Reveal the file in the Files app by opening a `shareddocuments://`
@@ -227,32 +222,16 @@ private struct DownloadRow: View {
     private var trailingButtons: some View {
         switch download.state {
         case .running:
-            iconButton(system: "xmark", tint: .oldOS(189, 20, 33), action: onCancel)
+            OldOSDownloadIconButton(kind: .cancel, action: onCancel)
         case .completed:
-            HStack(spacing: 8) {
-                iconButton(system: "folder", tint: theme.listRowText, action: onOpen)
-                iconButton(system: "square.and.arrow.up", tint: theme.listRowText, action: onShare)
-                iconButton(system: "trash", tint: .oldOS(189, 20, 33), action: onDelete)
+            HStack(spacing: 7) {
+                OldOSDownloadIconButton(kind: .folder, action: onOpen)
+                OldOSDownloadIconButton(kind: .share, action: onShare)
+                OldOSDownloadIconButton(kind: .trash, action: onDelete)
             }
         case .failed, .cancelled:
-            iconButton(system: "trash", tint: .oldOS(189, 20, 33), action: onDelete)
+            OldOSDownloadIconButton(kind: .trash, action: onDelete)
         }
-    }
-
-    private func iconButton(system: String, tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            action()
-        }) {
-            Image(systemName: system)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(tint)
-                .frame(width: 30, height: 30)
-                .background(
-                    Circle().fill(theme.cardFill.opacity(0.001))
-                )
-        }
-        .buttonStyle(.plain)
     }
 
     private func symbol(for name: String) -> String {
@@ -270,4 +249,103 @@ private struct DownloadRow: View {
         default: return "arrow.down.doc"
         }
     }
+
+    private struct OldOSDownloadIconButton: View {
+        enum Kind { case folder, share, trash, cancel }
+
+        let kind: Kind
+        let action: () -> Void
+
+        var body: some View {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                action()
+            } label: {
+                OldOSDownloadGlyph(
+                    kind: kind,
+                    color: kind == .trash || kind == .cancel
+                        ? .oldOS(189, 20, 33)
+                        : theme.listRowText
+                )
+                    .frame(width: 24, height: 24)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private struct OldOSDownloadGlyph: View {
+        let kind: OldOSDownloadIconButton.Kind
+        let color: Color
+
+        var body: some View {
+            Canvas { context, size in
+                let stroke = color
+                var path = Path()
+                let w = size.width
+                let h = size.height
+
+                switch kind {
+                case .folder:
+                    path.move(to: CGPoint(x: 2, y: 7))
+                    path.addLine(to: CGPoint(x: 9, y: 7))
+                    path.addLine(to: CGPoint(x: 11, y: 9))
+                    path.addLine(to: CGPoint(x: w - 2, y: 9))
+                    path.addLine(to: CGPoint(x: w - 2, y: h - 4))
+                    path.addLine(to: CGPoint(x: 2, y: h - 4))
+                    path.closeSubpath()
+                    context.stroke(
+                        path,
+                        with: .color(stroke),
+                        style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                    )
+
+                case .share:
+                    path.move(to: CGPoint(x: 12, y: h - 3))
+                    path.addLine(to: CGPoint(x: 12, y: 8))
+                    path.move(to: CGPoint(x: 8, y: 12))
+                    path.addLine(to: CGPoint(x: 12, y: 8))
+                    path.addLine(to: CGPoint(x: 16, y: 12))
+                    path.move(to: CGPoint(x: 5, y: 12))
+                    path.addLine(to: CGPoint(x: 5, y: h - 3))
+                    path.addLine(to: CGPoint(x: 19, y: h - 3))
+                    path.addLine(to: CGPoint(x: 19, y: 12))
+                    context.stroke(
+                        path,
+                        with: .color(stroke),
+                        style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                    )
+
+                case .trash:
+                    path.addRoundedRect(
+                        in: CGRect(x: 5, y: 6, width: 14, height: 15),
+                        cornerSize: CGSize(width: 1.5, height: 1.5)
+                    )
+                    path.move(to: CGPoint(x: 3, y: 6))
+                    path.addLine(to: CGPoint(x: 21, y: 6))
+                    path.move(to: CGPoint(x: 9, y: 3))
+                    path.addLine(to: CGPoint(x: 15, y: 3))
+                    path.addLine(to: CGPoint(x: 16, y: 6))
+                    context.stroke(
+                        path,
+                        with: .color(stroke),
+                        style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                    )
+
+                case .cancel:
+                    path.move(to: CGPoint(x: 6, y: 6))
+                    path.addLine(to: CGPoint(x: 18, y: 18))
+                    path.move(to: CGPoint(x: 18, y: 6))
+                    path.addLine(to: CGPoint(x: 6, y: 18))
+                    context.stroke(
+                        path,
+                        with: .color(stroke),
+                        style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                    )
+                }
+            }
+        }
+    }
+
 }

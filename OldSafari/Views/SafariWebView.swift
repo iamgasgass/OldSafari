@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import WebKit
+import Photos
 
 struct SafariWebView: UIViewRepresentable {
     @ObservedObject var tab: SafariTab
@@ -14,6 +15,17 @@ struct SafariWebView: UIViewRepresentable {
         tab.activateIfNeeded()
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
+
+        let controller = webView.configuration.userContentController
+        controller.removeScriptMessageHandler(forName: "oldSafariContextMenu")
+        controller.add(context.coordinator, name: "oldSafariContextMenu")
+        controller.addUserScript(
+            WKUserScript(
+                source: "(function() {\n    if (window.__oldSafariContextMenuInstalled) return;\n    window.__oldSafariContextMenuInstalled = true;\n    document.addEventListener(\"contextmenu\", function(event) {\n        var node = event.target;\n        if (!node) return;\n        var image = node.closest ? node.closest(\"img\") : null;\n        if (!image) {\n            window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: null});\n            return;\n        }\n        var src = image.currentSrc || image.src || image.getAttribute(\"src\") || \"\";\n        window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: src});\n    }, true);\n})();",
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: false
+            )
+        )
 
         if #available(iOS 16.0, *) {
             webView.isFindInteractionEnabled = true
@@ -54,12 +66,28 @@ struct SafariWebView: UIViewRepresentable {
         Coordinator()
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var onOpenInNewTab: ((URL) -> Void)?
+        private var contextMenuImageURL: URL?
 
         @objc func handleRefresh(_ control: UIRefreshControl) {
             webView?.reload()
+        }
+
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == "oldSafariContextMenu" else { return }
+            if let payload = message.body as? [String: Any],
+               let raw = payload["src"] as? String,
+               !raw.isEmpty,
+               let url = URL(string: raw) {
+                contextMenuImageURL = url
+            } else {
+                contextMenuImageURL = nil
+            }
         }
 
         func webView(
@@ -300,14 +328,40 @@ struct SafariWebView: UIViewRepresentable {
 
         // MARK: JavaScript panels
 
-        private func present(_ alert: UIAlertController, from webView: WKWebView) {
-            guard let controller = webView.window?.rootViewController else { return }
-            var top = controller
-            while let presented = top.presentedViewController { top = presented }
-            // System alerts always follow the device's Light/Dark Mode
-            // setting, in both Normal and Private browsing.
-            alert.overrideUserInterfaceStyle = .unspecified
-            top.present(alert, animated: true)
+        private func presentOldOSAlert(
+            title: String?,
+            message: String,
+            buttons: [(String, OldOSJavaScriptAlertController.ButtonKind)],
+            textField: String? = nil,
+            completion: @escaping (String?, Int) -> Void
+        ) {
+            guard let controller = webView?.window?.rootViewController else {
+                completion(textField, 0)
+                return
+            }
+
+            var presenter = controller
+            while let presented = presenter.presentedViewController {
+                presenter = presented
+            }
+
+            let alert = OldOSJavaScriptAlertController(
+                title: title,
+                message: message,
+                buttons: buttons,
+                text: textField
+            ) { [weak presenter] value, index in
+                // WKWebView's completion handler must be called before the
+                // presentation controller is torn down. Doing it here also
+                // guarantees it is invoked exactly once.
+                completion(value, index)
+                presenter?.dismiss(animated: true)
+            }
+
+            alert.modalPresentationStyle = .overFullScreen
+            alert.modalTransitionStyle = .crossDissolve
+            alert.view.backgroundColor = .clear
+            presenter.present(alert, animated: true)
         }
 
         func webView(
@@ -316,15 +370,11 @@ struct SafariWebView: UIViewRepresentable {
             initiatedByFrame frame: WKFrameInfo,
             completionHandler: @escaping () -> Void
         ) {
-            let alert = UIAlertController(
+            presentOldOSAlert(
                 title: frame.request.url?.host,
                 message: message,
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
-                completionHandler()
-            })
-            present(alert, from: webView)
+                buttons: [("OK", .default)]
+            ) { _, _ in completionHandler() }
         }
 
         func webView(
@@ -333,18 +383,11 @@ struct SafariWebView: UIViewRepresentable {
             initiatedByFrame frame: WKFrameInfo,
             completionHandler: @escaping (Bool) -> Void
         ) {
-            let alert = UIAlertController(
+            presentOldOSAlert(
                 title: frame.request.url?.host,
                 message: message,
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
-                completionHandler(false)
-            })
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
-                completionHandler(true)
-            })
-            present(alert, from: webView)
+                buttons: [("Cancel", .cancel), ("OK", .default)]
+            ) { _, index in completionHandler(index == 1) }
         }
 
         func webView(
@@ -354,19 +397,14 @@ struct SafariWebView: UIViewRepresentable {
             initiatedByFrame frame: WKFrameInfo,
             completionHandler: @escaping (String?) -> Void
         ) {
-            let alert = UIAlertController(
+            presentOldOSAlert(
                 title: frame.request.url?.host,
                 message: prompt,
-                preferredStyle: .alert
-            )
-            alert.addTextField { $0.text = defaultText }
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
-                completionHandler(nil)
-            })
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
-                completionHandler(alert.textFields?.first?.text)
-            })
-            present(alert, from: webView)
+                buttons: [("Cancel", .cancel), ("OK", .default)],
+                textField: defaultText
+            ) { value, index in
+                completionHandler(index == 1 ? value : nil)
+            }
         }
 
         // MARK: Long press on a link
@@ -376,7 +414,11 @@ struct SafariWebView: UIViewRepresentable {
             contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
             completionHandler: @escaping (UIContextMenuConfiguration?) -> Void
         ) {
-            guard let url = elementInfo.linkURL else {
+            let linkURL = elementInfo.linkURL
+            let imageURL = contextMenuImageURL
+            contextMenuImageURL = nil
+
+            guard linkURL != nil || imageURL != nil else {
                 completionHandler(nil)
                 return
             }
@@ -385,56 +427,270 @@ struct SafariWebView: UIViewRepresentable {
                 identifier: nil,
                 previewProvider: nil
             ) { [weak self] _ in
-                let open = UIAction(
-                    title: "Open",
-                    image: UIImage(systemName: "safari")
-                ) { _ in
-                    webView.load(URLRequest(url: url))
+                var actions: [UIAction] = []
+
+                if let imageURL {
+                    let saveImage = UIAction(
+                        title: "Save Image",
+                        image: UIImage(systemName: "square.and.arrow.down")
+                    ) { [weak self] _ in
+                        self?.saveImageToPhotos(imageURL)
+                    }
+                    actions.append(saveImage)
                 }
 
-                let newTab = UIAction(
-                    title: "Open in New Page",
-                    image: UIImage(systemName: "plus.square.on.square")
-                ) { _ in
-                    self?.onOpenInNewTab?(url)
+                if let linkURL {
+                    let open = UIAction(
+                        title: "Open",
+                        image: UIImage(systemName: "safari")
+                    ) { _ in
+                        webView.load(URLRequest(url: linkURL))
+                    }
+
+                    let newTab = UIAction(
+                        title: "Open in New Page",
+                        image: UIImage(systemName: "plus.square.on.square")
+                    ) { [weak self] _ in
+                        self?.onOpenInNewTab?(linkURL)
+                    }
+
+                    let copy = UIAction(
+                        title: "Copy Link",
+                        image: UIImage(systemName: "doc.on.doc")
+                    ) { _ in
+                        UIPasteboard.general.url = linkURL
+                    }
+
+                    let download = UIAction(
+                        title: "Download Linked File",
+                        image: UIImage(systemName: "arrow.down.circle")
+                    ) { _ in
+                        webView.load(URLRequest(url: linkURL))
+                    }
+
+                    actions.append(contentsOf: [open])
+                    if self?.onOpenInNewTab != nil { actions.append(newTab) }
+                    actions.append(contentsOf: [copy, download])
+
+                    let share = UIAction(
+                        title: "Share…",
+                        image: UIImage(systemName: "square.and.arrow.up")
+                    ) { _ in
+                        let controller = UIActivityViewController(
+                            activityItems: [linkURL],
+                            applicationActivities: nil
+                        )
+                        controller.overrideUserInterfaceStyle = .unspecified
+                        controller.popoverPresentationController?.sourceView = webView
+                        webView.window?.rootViewController?.present(controller, animated: true)
+                    }
+                    actions.append(share)
                 }
 
-                let copy = UIAction(
-                    title: "Copy Link",
-                    image: UIImage(systemName: "doc.on.doc")
-                ) { _ in
-                    UIPasteboard.general.url = url
-                }
-
-                let download = UIAction(
-                    title: "Download Linked File",
-                    image: UIImage(systemName: "arrow.down.circle")
-                ) { _ in
-                    webView.load(URLRequest(url: url))
-                }
-
-                let share = UIAction(
-                    title: "Share\u{2026}",
-                    image: UIImage(systemName: "square.and.arrow.up")
-                ) { _ in
-                    let controller = UIActivityViewController(
-                        activityItems: [url],
-                        applicationActivities: nil
-                    )
-                    // The native share sheet always matches the system
-                    // appearance, in both Normal and Private browsing.
-                    controller.overrideUserInterfaceStyle = .unspecified
-                    controller.popoverPresentationController?.sourceView = webView
-                    webView.window?.rootViewController?.present(controller, animated: true)
-                }
-
-                var actions: [UIAction] = [open]
-                if self?.onOpenInNewTab != nil { actions.append(newTab) }
-                actions.append(contentsOf: [copy, download, share])
-                return UIMenu(title: url.absoluteString, children: actions)
+                return UIMenu(title: imageURL != nil ? "Image" : (linkURL?.absoluteString ?? ""), children: actions)
             }
 
             completionHandler(configuration)
         }
+
+        /// WKContextMenuElementInfo supplies the resolved image URL, but does
+        /// not itself save anything. Fetch it as binary data, create a UIImage,
+        /// then use the Photos add-only API. This fixes "Save Image" on sites
+        /// such as Google Images without depending on WebKit's temporary cache.
+        private func saveImageToPhotos(_ url: URL) {
+            let request = URLRequest(
+                url: url,
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                timeoutInterval: 30
+            )
+
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                guard
+                    error == nil,
+                    let data,
+                    let image = UIImage(data: data)
+                else { return }
+
+                PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+                    guard status == .authorized || status == .limited else { return }
+
+                    PHPhotoLibrary.shared().performChanges {
+                        PHAssetChangeRequest.creationRequestForAsset(from: image)
+                    } completionHandler: { _, _ in }
+                }
+            }.resume()
+        }
+
+    }
+}
+
+
+/// A small, self-contained recreation of the iOS 6 JavaScript alert surface.
+/// It intentionally does not use UIAlertController: that control adopts the
+/// current iOS visual language and therefore cannot reproduce the old Safari
+/// alert chrome.
+final class OldOSJavaScriptAlertController: UIViewController {
+
+    enum ButtonKind {
+        case `default`
+        case cancel
+    }
+
+    private let alertTitle: String?
+    private let message: String
+    private let buttons: [(String, ButtonKind)]
+    private let initialText: String?
+    private let completion: (String?, Int) -> Void
+    private var didFinish = false
+    private weak var input: UITextField?
+
+    init(
+        title: String?,
+        message: String,
+        buttons: [(String, ButtonKind)],
+        text: String?,
+        completion: @escaping (String?, Int) -> Void
+    ) {
+        self.alertTitle = title
+        self.message = message
+        self.buttons = buttons
+        self.initialText = text
+        self.completion = completion
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        let scrim = UIView()
+        scrim.backgroundColor = UIColor.black.withAlphaComponent(0.48)
+        scrim.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrim)
+        NSLayoutConstraint.activate([
+            scrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrim.topAnchor.constraint(equalTo: view.topAnchor),
+            scrim.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+
+        let card = UIView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.layer.cornerRadius = 10
+        card.layer.masksToBounds = true
+        card.layer.borderWidth = 1
+        card.layer.borderColor = UIColor(white: 0.08, alpha: 0.85).cgColor
+        card.backgroundColor = UIColor(white: 0.91, alpha: 1)
+        view.addSubview(card)
+
+        let width = min(UIScreen.main.bounds.width - 40, 280)
+        NSLayoutConstraint.activate([
+            card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            card.widthAnchor.constraint(equalToConstant: width)
+        ])
+
+        let topGradient = CAGradientLayer()
+        topGradient.colors = [
+            UIColor(white: 0.98, alpha: 1).cgColor,
+            UIColor(white: 0.78, alpha: 1).cgColor
+        ]
+        topGradient.locations = [0, 1]
+        topGradient.frame = CGRect(x: 0, y: 0, width: width, height: 1)
+        card.layer.addSublayer(topGradient)
+
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: card.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor)
+        ])
+
+        let titleLabel = UILabel()
+        titleLabel.text = alertTitle?.isEmpty == false ? alertTitle : "Safari"
+        titleLabel.textAlignment = .center
+        titleLabel.font = UIFont(name: "HelveticaNeue-Bold", size: 18) ?? .boldSystemFont(ofSize: 18)
+        titleLabel.textColor = .black
+        titleLabel.numberOfLines = 2
+        titleLabel.setContentHuggingPriority(.required, for: .vertical)
+        titleLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
+        stack.addArrangedSubview(titleLabel)
+
+        let messageLabel = UILabel()
+        messageLabel.text = message
+        messageLabel.textAlignment = .center
+        messageLabel.font = UIFont(name: "HelveticaNeue", size: 15) ?? .systemFont(ofSize: 15)
+        messageLabel.textColor = UIColor(white: 0.12, alpha: 1)
+        messageLabel.numberOfLines = 0
+        messageLabel.lineBreakMode = .byWordWrapping
+        messageLabel.layoutMargins = UIEdgeInsets(top: 0, left: 18, bottom: 10, right: 18)
+        stack.addArrangedSubview(messageLabel)
+
+        if let initialText {
+            let field = UITextField()
+            field.text = initialText
+            field.font = UIFont(name: "HelveticaNeue", size: 15)
+            field.textColor = .black
+            field.backgroundColor = .white
+            field.layer.cornerRadius = 6
+            field.layer.borderWidth = 1
+            field.layer.borderColor = UIColor(white: 0.55, alpha: 1).cgColor
+            field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 7, height: 1))
+            field.leftViewMode = .always
+            field.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 7, height: 1))
+            field.rightViewMode = .always
+            field.heightAnchor.constraint(equalToConstant: 32).isActive = true
+            field.translatesAutoresizingMaskIntoConstraints = false
+            stack.setCustomSpacing(10, after: messageLabel)
+            stack.addArrangedSubview(field)
+            input = field
+        }
+
+        let separator = UIView()
+        separator.backgroundColor = UIColor(white: 0.67, alpha: 1)
+        separator.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
+        stack.addArrangedSubview(separator)
+
+        let buttonRow = UIStackView()
+        buttonRow.axis = .horizontal
+        buttonRow.distribution = .fillEqually
+        buttonRow.spacing = 1 / UIScreen.main.scale
+        buttonRow.backgroundColor = UIColor(white: 0.67, alpha: 1)
+        buttonRow.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        stack.addArrangedSubview(buttonRow)
+
+        for (index, item) in buttons.enumerated() {
+            let button = UIButton(type: .custom)
+            button.tag = index
+            button.setTitle(item.0, for: .normal)
+            button.titleLabel?.font = UIFont(name: "HelveticaNeue-Bold", size: 17) ?? .boldSystemFont(ofSize: 17)
+            button.setTitleColor(item.1 == .cancel ? UIColor(white: 0.18, alpha: 1) : UIColor(red: 0.05, green: 0.32, blue: 0.67, alpha: 1), for: .normal)
+            button.backgroundColor = UIColor(white: 0.91, alpha: 1)
+            button.addTarget(self, action: #selector(handleButton(_:)), for: .touchUpInside)
+            buttonRow.addArrangedSubview(button)
+        }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        input?.becomeFirstResponder()
+    }
+
+    @objc private func handleButton(_ sender: UIButton) {
+        finish(index: sender.tag)
+    }
+
+    private func finish(index: Int) {
+        guard !didFinish else { return }
+        didFinish = true
+        completion(input?.text, index)
     }
 }
