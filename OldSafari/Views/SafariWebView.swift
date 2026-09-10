@@ -21,7 +21,7 @@ struct SafariWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: "oldSafariContextMenu")
         controller.addUserScript(
             WKUserScript(
-                source: "(function() {\n    if (window.__oldSafariContextMenuInstalled) return;\n    window.__oldSafariContextMenuInstalled = true;\n    document.addEventListener(\"contextmenu\", function(event) {\n        var node = event.target;\n        if (!node) return;\n        var image = node.closest ? node.closest(\"img\") : null;\n        if (!image) {\n            window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: null});\n            return;\n        }\n        var src = image.currentSrc || image.src || image.getAttribute(\"src\") || \"\";\n        window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: src});\n    }, true);\n})();",
+                source: "(function() {\n if (window.__oldSafariContextMenuInstalled) return;\n window.__oldSafariContextMenuInstalled = true;\n document.addEventListener(\"contextmenu\", function(event) {\n var node = event.target;\n if (!node) return;\n var image = node.closest ? node.closest(\"img\") : null;\n if (!image) {\n window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: null});\n return;\n }\n var src = image.currentSrc || image.src || image.getAttribute(\"src\") || \"\";\n window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: src});\n }, true);\n})();",
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: false
             )
@@ -130,7 +130,7 @@ struct SafariWebView: UIViewRepresentable {
             }
 
             // Custom scheme used by the blob download shim in SafariTab.
-            // The URL carries `?name=...&data=<base64>` and we materialise it
+            // The URL carries `?name=...&data=` and we materialise it
             // as a real file under the app's Downloads directory.
             if scheme == "oldsafari-download" {
                 handleBlobDownload(url: url)
@@ -138,7 +138,7 @@ struct SafariWebView: UIViewRepresentable {
                 return
             }
 
-            let webHandledSchemes: Set<String> = [
+            let webHandledSchemes: Set = [
                 "http", "https", "about", "blob", "data", "file"
             ]
 
@@ -486,21 +486,22 @@ struct SafariWebView: UIViewRepresentable {
                     actions.append(contentsOf: [open])
                     if self?.onOpenInNewTab != nil { actions.append(newTab) }
                     actions.append(contentsOf: [copy, download])
-
-                    let share = UIAction(
-                        title: "Share…",
-                        image: UIImage(systemName: "square.and.arrow.up")
-                    ) { _ in
-                        let controller = UIActivityViewController(
-                            activityItems: [linkURL],
-                            applicationActivities: nil
-                        )
-                        controller.overrideUserInterfaceStyle = .unspecified
-                        controller.popoverPresentationController?.sourceView = webView
-                        webView.window?.rootViewController?.present(controller, animated: true)
-                    }
-                    actions.append(share)
                 }
+
+                let share = UIAction(
+                    title: "Share…",
+                    image: UIImage(systemName: "square.and.arrow.up")
+                ) { _ in
+                    let shareItem: Any = imageURL ?? linkURL as Any
+                    let controller = UIActivityViewController(
+                        activityItems: [shareItem],
+                        applicationActivities: nil
+                    )
+                    controller.overrideUserInterfaceStyle = .unspecified
+                    controller.popoverPresentationController?.sourceView = webView
+                    webView.window?.rootViewController?.present(controller, animated: true)
+                }
+                actions.append(share)
 
                 return UIMenu(title: imageURL != nil ? "Image" : (linkURL?.absoluteString ?? ""), children: actions)
             }
@@ -518,7 +519,6 @@ struct SafariWebView: UIViewRepresentable {
                 cachePolicy: .reloadIgnoringLocalCacheData,
                 timeoutInterval: 30
             )
-
             URLSession.shared.dataTask(with: request) { data, response, error in
                 guard
                     error == nil,
@@ -528,22 +528,26 @@ struct SafariWebView: UIViewRepresentable {
 
                 PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
                     guard status == .authorized || status == .limited else { return }
-
                     PHPhotoLibrary.shared().performChanges {
                         PHAssetChangeRequest.creationRequestForAsset(from: image)
                     } completionHandler: { _, _ in }
                 }
             }.resume()
         }
-
     }
 }
 
-
-/// A small, self-contained recreation of the iOS 6 JavaScript alert surface.
-/// It intentionally does not use UIAlertController: that control adopts the
-/// current iOS visual language and therefore cannot reproduce the old Safari
-/// alert chrome.
+/// Replica fedele dell'alert di sistema iOS 6 (rif. foto "Data Isolation" /
+/// permessi localizzazione). Ogni superficie colorata (card, pulsanti) ha
+/// SEMPRE un `backgroundColor` solido impostato PRIMA di aggiungere il
+/// CAGradientLayer di decorazione: questo garantisce che la card non possa
+/// MAI apparire trasparente, anche nell'istante prima che Auto Layout
+/// risolva le dimensioni reali e imposti il frame del gradiente in
+/// `viewDidLayoutSubviews`. Un CAGradientLayer con frame ancora a `.zero`
+/// semplicemente non disegna nulla — se quello fosse l'unico livello di
+/// colore, la card si vedrebbe come vuota/trasparente, che è esattamente
+/// il bug segnalato. Con `backgroundColor` come base solida, anche in quel
+/// istante la card mostra comunque il tono navy corretto.
 final class OldOSJavaScriptAlertController: UIViewController {
 
     enum ButtonKind {
@@ -566,6 +570,18 @@ final class OldOSJavaScriptAlertController: UIViewController {
     private var buttonGradients: [(CAGradientLayer, CAGradientLayer)] = []
     private var buttonContainers: [UIView] = []
 
+    // Colori campionati dalla foto di riferimento "Data Isolation":
+    // navy scuro in basso, blu-grigio chiaro in alto.
+    private let navyTop = UIColor(red: 126 / 255, green: 138 / 255, blue: 163 / 255, alpha: 1)
+    private let navyMidUpper = UIColor(red: 79 / 255, green: 95 / 255, blue: 130 / 255, alpha: 1)
+    private let navyMidLower = UIColor(red: 40 / 255, green: 55 / 255, blue: 92 / 255, alpha: 1)
+    private let navyBottom = UIColor(red: 33 / 255, green: 48 / 255, blue: 89 / 255, alpha: 1)
+
+    private let pillTop = UIColor(red: 173 / 255, green: 181 / 255, blue: 199 / 255, alpha: 1)
+    private let pillMidUpper = UIColor(red: 130 / 255, green: 141 / 255, blue: 164 / 255, alpha: 1)
+    private let pillMidLower = UIColor(red: 96 / 255, green: 108 / 255, blue: 136 / 255, alpha: 1)
+    private let pillBottom = UIColor(red: 72 / 255, green: 85 / 255, blue: 116 / 255, alpha: 1)
+
     init(
         title: String?,
         message: String,
@@ -587,13 +603,13 @@ final class OldOSJavaScriptAlertController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // IMPORTANT: this controller is presented with `.overFullScreen` and
-        // its own `view.backgroundColor` set to `.clear` by the presenter,
-        // so the root `view` never paints a solid background — only the
-        // `scrim` (dimming layer) and the `card` (the actual alert) do. If
-        // `view.backgroundColor` were ever left at the default `.white`,
-        // the whole screen would flash solid white before/behind the alert,
-        // which is exactly the "interamente bianco" symptom being fixed.
+        // La root view di questo controller viene presentata con
+        // `.overFullScreen` e il presenter imposta anche
+        // `alert.view.backgroundColor = .clear` — corretto, perché solo lo
+        // scrim (livello di oscuramento) e la card (l'alert vero e proprio)
+        // devono disegnare colore. Lo impostiamo anche qui per sicurezza,
+        // così questa classe è autosufficiente anche se richiamata da un
+        // punto diverso del codice.
         view.backgroundColor = .clear
 
         let scrim = UIView()
@@ -609,6 +625,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
 
         let shadowContainer = UIView()
         shadowContainer.translatesAutoresizingMaskIntoConstraints = false
+        shadowContainer.backgroundColor = .clear
         shadowContainer.layer.shadowColor = UIColor.black.cgColor
         shadowContainer.layer.shadowOpacity = 0.6
         shadowContainer.layer.shadowRadius = 14
@@ -622,16 +639,12 @@ final class OldOSJavaScriptAlertController: UIViewController {
             shadowContainer.widthAnchor.constraint(equalToConstant: width)
         ])
 
-        // The card MUST NOT have a plain `backgroundColor` — the entire
-        // surface is painted by `cardGradient` (a CAGradientLayer inserted
-        // at index 0). Setting a `backgroundColor` on top of a gradient
-        // sublayer is harmless as long as the gradient layer's frame is
-        // correctly sized in `viewDidLayoutSubviews`; leaving the gradient
-        // frame at `.zero` (a bug in an earlier revision of this file) is
-        // what caused the card to render as a flat, undecorated white/blank
-        // rectangle instead of the navy chrome from the reference photo.
+        // FIX principale del bug "alert trasparente": la card riceve un
+        // `backgroundColor` solido (il tono più scuro del gradiente) PRIMA
+        // di ricevere il CAGradientLayer decorativo. Anche se il gradiente
+        // avesse frame zero per un istante, la card è già navy solida.
         card.translatesAutoresizingMaskIntoConstraints = false
-        card.backgroundColor = .clear
+        card.backgroundColor = navyBottom
         card.layer.cornerRadius = 13
         card.layer.masksToBounds = true
         card.layer.borderWidth = 1
@@ -644,16 +657,18 @@ final class OldOSJavaScriptAlertController: UIViewController {
             card.bottomAnchor.constraint(equalTo: shadowContainer.bottomAnchor)
         ])
 
-        // Vertical navy-blue gradient sampled from the "Data Isolation"
-        // reference photo: light blue-gray at the top fading to dark navy
-        // at the bottom, as one continuous ramp (not a hard two-tone split).
         cardGradient.colors = [
-            UIColor(red: 126 / 255, green: 138 / 255, blue: 163 / 255, alpha: 1).cgColor,
-            UIColor(red: 79 / 255,  green: 95 / 255,  blue: 130 / 255, alpha: 1).cgColor,
-            UIColor(red: 40 / 255,  green: 55 / 255,  blue: 92 / 255,  alpha: 1).cgColor,
-            UIColor(red: 33 / 255,  green: 48 / 255,  blue: 89 / 255,  alpha: 1).cgColor
+            navyTop.cgColor,
+            navyMidUpper.cgColor,
+            navyMidLower.cgColor,
+            navyBottom.cgColor
         ]
         cardGradient.locations = [0, 0.18, 0.55, 1.0]
+        // Frame iniziale non-zero basato sulla larghezza nota e su una
+        // stima d'altezza generosa: elimina qualunque possibile istante
+        // di "frame zero" tra l'inserimento del layer e la prima passata
+        // di `viewDidLayoutSubviews`.
+        cardGradient.frame = CGRect(x: 0, y: 0, width: width, height: 220)
         card.layer.insertSublayer(cardGradient, at: 0)
 
         let topHighlight = CAGradientLayer()
@@ -661,11 +676,10 @@ final class OldOSJavaScriptAlertController: UIViewController {
             UIColor.white.withAlphaComponent(0.38).cgColor,
             UIColor.white.withAlphaComponent(0.0).cgColor
         ]
+        topHighlight.frame = CGRect(x: 0, y: 0, width: width, height: 42)
         card.layer.insertSublayer(topHighlight, above: cardGradient)
         self.topHighlightLayer = topHighlight
 
-        // Thin light "rim" just inside the dark outer border — the subtle
-        // double-edge glassy look visible in the reference photo.
         let rim = CAShapeLayer()
         rim.fillColor = UIColor.clear.cgColor
         rim.strokeColor = UIColor.white.withAlphaComponent(0.3).cgColor
@@ -677,6 +691,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
         outerStack.axis = .vertical
         outerStack.spacing = 0
         outerStack.translatesAutoresizingMaskIntoConstraints = false
+        outerStack.backgroundColor = .clear
         card.addSubview(outerStack)
         NSLayoutConstraint.activate([
             outerStack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
@@ -688,6 +703,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
         let textStack = UIStackView()
         textStack.axis = .vertical
         textStack.spacing = 6
+        textStack.backgroundColor = .clear
         textStack.isLayoutMarginsRelativeArrangement = true
         textStack.layoutMargins = UIEdgeInsets(top: 18, left: 16, bottom: 16, right: 16)
         outerStack.addArrangedSubview(textStack)
@@ -697,8 +713,8 @@ final class OldOSJavaScriptAlertController: UIViewController {
         titleLabel.textAlignment = .center
         titleLabel.font = UIFont(name: "HelveticaNeue-Bold", size: 17) ?? .boldSystemFont(ofSize: 17)
         titleLabel.textColor = .white
-        titleLabel.numberOfLines = 2
         titleLabel.backgroundColor = .clear
+        titleLabel.numberOfLines = 2
         titleLabel.layer.shadowColor = UIColor.black.withAlphaComponent(0.55).cgColor
         titleLabel.layer.shadowOffset = CGSize(width: 0, height: 1)
         titleLabel.layer.shadowOpacity = 1
@@ -712,9 +728,9 @@ final class OldOSJavaScriptAlertController: UIViewController {
         messageLabel.textAlignment = .center
         messageLabel.font = UIFont(name: "HelveticaNeue", size: 14) ?? .systemFont(ofSize: 14)
         messageLabel.textColor = .white
+        messageLabel.backgroundColor = .clear
         messageLabel.numberOfLines = 0
         messageLabel.lineBreakMode = .byWordWrapping
-        messageLabel.backgroundColor = .clear
         messageLabel.layer.shadowColor = UIColor.black.withAlphaComponent(0.5).cgColor
         messageLabel.layer.shadowOffset = CGSize(width: 0, height: 1)
         messageLabel.layer.shadowOpacity = 1
@@ -753,6 +769,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
         buttonRow.axis = .horizontal
         buttonRow.spacing = 8
         buttonRow.distribution = .fillEqually
+        buttonRow.backgroundColor = .clear
         buttonRow.isLayoutMarginsRelativeArrangement = true
         buttonRow.layoutMargins = UIEdgeInsets(top: 10, left: 10, bottom: 12, right: 10)
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
@@ -767,14 +784,14 @@ final class OldOSJavaScriptAlertController: UIViewController {
         }
     }
 
-    /// Separate rounded "pill" buttons, each with its own lighter gradient
-    /// and gloss highlight — this is what the reference photo actually
-    /// shows for "Don't Allow" / "OK" (two distinct buttons with visible
-    /// gaps and their own chrome), not a single borderless strip.
+    /// Pillole separate (non una striscia unica): ognuna ha un
+    /// `backgroundColor` solido di base (`pillBottom`, il tono più scuro
+    /// del proprio gradiente) applicato PRIMA del CAGradientLayer, per la
+    /// stessa ragione anti-trasparenza spiegata sopra per la card.
     private func makePillButton(title: String, tag: Int) -> (UIView, CAGradientLayer, CAGradientLayer) {
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        container.backgroundColor = .clear
+        container.backgroundColor = pillBottom
         container.layer.cornerRadius = 8
         container.layer.masksToBounds = true
         container.layer.borderWidth = 1 / UIScreen.main.scale
@@ -782,12 +799,17 @@ final class OldOSJavaScriptAlertController: UIViewController {
 
         let gradient = CAGradientLayer()
         gradient.colors = [
-            UIColor(red: 173 / 255, green: 181 / 255, blue: 199 / 255, alpha: 1).cgColor,
-            UIColor(red: 130 / 255, green: 141 / 255, blue: 164 / 255, alpha: 1).cgColor,
-            UIColor(red: 96 / 255,  green: 108 / 255, blue: 136 / 255, alpha: 1).cgColor,
-            UIColor(red: 72 / 255,  green: 85 / 255,  blue: 116 / 255, alpha: 1).cgColor
+            pillTop.cgColor,
+            pillMidUpper.cgColor,
+            pillMidLower.cgColor,
+            pillBottom.cgColor
         ]
         gradient.locations = [0, 0.42, 0.43, 1.0]
+        // Frame iniziale non-zero: la larghezza reale della pillola non è
+        // ancora nota qui, ma una stima ragionevole (metà della card meno
+        // margini) evita l'istante di trasparenza; verrà corretto al primo
+        // passaggio di `viewDidLayoutSubviews`.
+        gradient.frame = CGRect(x: 0, y: 0, width: 120, height: 44)
         container.layer.insertSublayer(gradient, at: 0)
 
         let highlight = CAGradientLayer()
@@ -795,6 +817,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
             UIColor.white.withAlphaComponent(0.45).cgColor,
             UIColor.white.withAlphaComponent(0.0).cgColor
         ]
+        highlight.frame = CGRect(x: 0, y: 0, width: 120, height: 22)
         container.layer.insertSublayer(highlight, above: gradient)
 
         let button = UIButton(type: .custom)
@@ -834,15 +857,15 @@ final class OldOSJavaScriptAlertController: UIViewController {
         sender.superview?.layer.opacity = 1.0
     }
 
-    // All CAGradientLayer/CAShapeLayer frames are set here rather than at
-    // creation time, because at `viewDidLoad` the card and button views
-    // have zero size (Auto Layout has not resolved yet). Forgetting this
-    // step — or setting frames only once instead of on every layout pass —
-    // is precisely what makes a gradient-backed view render as a flat,
-    // undecorated blank/white rectangle: the gradient layer exists but has
-    // no area to actually paint.
+    // Ricalcola i frame dei layer decorativi ad OGNI passata di layout
+    // (non solo alla prima), così qualunque cambio di dimensioni della
+    // card o delle pillole (es. rotazione, Dynamic Type) non lascia mai
+    // un gradiente con frame obsoleto o vuoto.
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+
+        guard card.bounds.width > 0, card.bounds.height > 0 else { return }
+
         cardGradient.frame = card.bounds
         topHighlightLayer?.frame = CGRect(
             x: 0, y: 0,
@@ -856,6 +879,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
         ).cgPath
 
         for (index, container) in buttonContainers.enumerated() {
+            guard container.bounds.width > 0, container.bounds.height > 0 else { continue }
             let (gradient, highlight) = buttonGradients[index]
             gradient.frame = container.bounds
             highlight.frame = CGRect(
