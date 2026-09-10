@@ -21,20 +21,6 @@ struct SafariWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: "oldSafariContextMenu")
         controller.addUserScript(
             WKUserScript(
-                // FIX BUG "Salva immagine non salva nulla" — canale DOPPIO:
-                // 1) `window.__oldSafariLastImageSrc` viene letta in modo
-                //    sincrono da Swift via evaluateJavaScript, ma questo
-                //    funziona solo se l'immagine sta nel FRAME PRINCIPALE.
-                // 2) Il postMessage raggiunge invece sempre l'handler nativo
-                //    da QUALSIASI frame/iframe della pagina (il gestore è
-                //    condiviso), quindi copre anche le immagini annidate in
-                //    iframe che il canale 1 non vede. Usiamo entrambi e
-                //    prendiamo qualunque valore non vuoto sia disponibile.
-                // In più registriamo già al "touchstart" (istantaneo al
-                // contatto del dito) e non solo al "contextmenu" del DOM,
-                // così il valore è pronto ben prima che il long press di
-                // ~500ms faccia comparire il menu nativo — nessuna race
-                // condition residua.
                 source: """
                 (function() {
                   if (window.__oldSafariContextMenuInstalled) return;
@@ -80,16 +66,12 @@ struct SafariWebView: UIViewRepresentable {
             webView.isFindInteractionEnabled = true
         }
 
-        // Swipe navigation and interactive keyboard dismissal make the browser
-        // feel native on modern hardware without touching the iOS 6 chrome.
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = true
         webView.scrollView.keyboardDismissMode = .interactive
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.scrollsToTop = true
 
-        // Pull to refresh, like the current Safari. Guarded because the same
-        // WKWebView is also mounted by the tab switcher.
         context.coordinator.webView = webView
         context.coordinator.onOpenInNewTab = onOpenInNewTab
         if webView.scrollView.refreshControl == nil {
@@ -106,8 +88,6 @@ struct SafariWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        // WKWebView is owned by SafariTab. Recreating or reloading it from
-        // SwiftUI updates would destroy scroll position and navigation state.
         context.coordinator.onOpenInNewTab = onOpenInNewTab
     }
 
@@ -118,7 +98,6 @@ struct SafariWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var onOpenInNewTab: ((URL) -> Void)?
-        /// Canale di backup (via postMessage), popolato anche da iframe.
         private var contextMenuImageURL: URL?
 
         @objc func handleRefresh(_ control: UIRefreshControl) {
@@ -153,8 +132,6 @@ struct SafariWebView: UIViewRepresentable {
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            // target="_blank" / window.open: hand the link to a new page when
-            // the browser chrome offers one, otherwise keep it in this page.
             if navigationAction.targetFrame == nil,
                let url = navigationAction.request.url {
                 if let onOpenInNewTab {
@@ -179,9 +156,6 @@ struct SafariWebView: UIViewRepresentable {
                 return
             }
 
-            // Custom scheme used by the blob download shim in SafariTab.
-            // The URL carries `?name=...&data=` and we materialise it
-            // as a real file under the app's Downloads directory.
             if scheme == "oldsafari-download" {
                 handleBlobDownload(url: url)
                 decisionHandler(.cancel)
@@ -203,14 +177,6 @@ struct SafariWebView: UIViewRepresentable {
 
         // MARK: Download detection
 
-        /// The response phase is where WebKit tells us the MIME type and
-        /// headers. Anything the browser cannot render inline (attachment,
-        /// unknown MIME, application/octet-stream) is redirected to the
-        /// download machinery, exactly like the current Safari does — but
-        /// FIRST we ask the user for confirmation with an iOS 6-style alert,
-        /// mirroring the "Do you want to download…?" prompt modern Safari
-        /// shows (era completamente assente: il download partiva subito
-        /// senza alcun alert).
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -258,8 +224,6 @@ struct SafariWebView: UIViewRepresentable {
             decisionHandler(.allow)
         }
 
-        /// Filled in from `decidePolicyFor:navigationResponse:` so we can
-        /// carry the suggested filename into `didBecome`.
         private var pendingHint: (String, URL)?
 
         func webView(
@@ -273,10 +237,7 @@ struct SafariWebView: UIViewRepresentable {
                 suggestedFilename: source.lastPathComponent,
                 using: download
             )
-            NotificationCenter.default.post(
-                name: .oldSafariDownloadStarted,
-                object: nil
-            )
+            NotificationCenter.default.post(name: .oldSafariDownloadStarted, object: nil)
         }
 
         func webView(
@@ -299,10 +260,7 @@ struct SafariWebView: UIViewRepresentable {
                 suggestedFilename: filename,
                 using: download
             )
-            NotificationCenter.default.post(
-                name: .oldSafariDownloadStarted,
-                object: nil
-            )
+            NotificationCenter.default.post(name: .oldSafariDownloadStarted, object: nil)
         }
 
         private func filenameHint(response: HTTPURLResponse, url: URL) -> String {
@@ -352,17 +310,11 @@ struct SafariWebView: UIViewRepresentable {
                     sourceURL: url,
                     suggestedFilename: destination.lastPathComponent
                 )
-                entry.updateProgress(
-                    received: Int64(data.count),
-                    expected: Int64(data.count)
-                )
+                entry.updateProgress(received: Int64(data.count), expected: Int64(data.count))
                 entry.markCompleted(at: destination)
                 DispatchQueue.main.async {
                     SafariDownloadManager.shared.register(entry)
-                    NotificationCenter.default.post(
-                        name: .oldSafariDownloadStarted,
-                        object: nil
-                    )
+                    NotificationCenter.default.post(name: .oldSafariDownloadStarted, object: nil)
                 }
             } catch {
                 // Silently ignore; the shim is best-effort by nature.
@@ -376,8 +328,6 @@ struct SafariWebView: UIViewRepresentable {
             didFailProvisionalNavigation navigation: WKNavigation?,
             withError error: Error
         ) {
-            // NSURLErrorCancelled (-999) is expected for interrupted loads.
-            // WKWebView has no useful UI state to expose for it.
             webView.scrollView.refreshControl?.endRefreshing()
         }
 
@@ -414,9 +364,6 @@ struct SafariWebView: UIViewRepresentable {
                 buttons: buttons,
                 text: textField
             ) { [weak presenter] value, index in
-                // WKWebView's completion handler must be called before the
-                // presentation controller is torn down. Doing it here also
-                // guarantees it is invoked exactly once.
                 completion(value, index)
                 presenter?.dismiss(animated: true)
             }
@@ -479,10 +426,6 @@ struct SafariWebView: UIViewRepresentable {
             let linkURL = elementInfo.linkURL
             let pageURL = webView.url
 
-            // FIX BUG "Salva immagine non salva nulla", canale doppio:
-            // proviamo prima a leggere la variabile JS globale (rapido, ma
-            // funziona solo nel frame principale), e se è vuota usiamo il
-            // valore arrivato via postMessage (funziona anche da iframe).
             webView.evaluateJavaScript("window.__oldSafariLastImageSrc || ''") { [weak self] result, _ in
                 guard let self else {
                     completionHandler(nil)
@@ -572,9 +515,6 @@ struct SafariWebView: UIViewRepresentable {
             }
         }
 
-        /// Alert di conferma in stile iOS 6, mostrato prima di scaricare
-        /// davvero l'immagine — replica il comportamento del Safari moderno
-        /// ma con la UI classica, riusando `presentOldOSAlert`.
         private func confirmAndSaveImage(_ url: URL, pageURL: URL?) {
             presentOldOSAlert(
                 title: "Save Image",
@@ -586,15 +526,6 @@ struct SafariWebView: UIViewRepresentable {
             }
         }
 
-        /// WKContextMenuElementInfo supplies the resolved image URL, but does
-        /// not itself save anything. Fetch it as binary data, create a
-        /// UIImage, then use the Photos add-only API.
-        ///
-        /// FIX BUG: mancava l'header Referer. Molti host con hotlink-protection
-        /// (Google Immagini / gstatic.com e CDN simili) rispondono 403 o corpo
-        /// vuoto a richieste "nude": UIImage(data:) falliva silenziosamente e
-        /// il flusso terminava senza alcun feedback. Ora impostiamo Referer +
-        /// User-Agent e mostriamo un alert iOS 6 in ogni esito.
         private func saveImageToPhotos(_ url: URL, referer: URL?) {
             var request = URLRequest(
                 url: url,
@@ -658,10 +589,12 @@ struct SafariWebView: UIViewRepresentable {
     }
 }
 
-/// A small, self-contained recreation of the iOS 6 JavaScript alert surface.
+/// A small, self-contained recreation of the classic iOS (pre-iOS 7)
+/// UIAlertView surface — the exact style shown in the "Data Isolation"
+/// location-permission reference: a rounded blue-gray gradient card with
+/// embossed white text, and glossy pill-shaped buttons side by side.
 /// It intentionally does not use UIAlertController: that control adopts the
-/// current iOS visual language and therefore cannot reproduce the old Safari
-/// alert chrome.
+/// current iOS visual language and therefore cannot reproduce this chrome.
 final class OldOSJavaScriptAlertController: UIViewController {
 
     enum ButtonKind {
@@ -676,6 +609,10 @@ final class OldOSJavaScriptAlertController: UIViewController {
     private let completion: (String?, Int) -> Void
     private var didFinish = false
     private weak var input: UITextField?
+
+    private let card = UIView()
+    private let cardGradient = CAGradientLayer()
+    private var buttonGradients: [(UIButton, CAGradientLayer)] = []
 
     init(
         title: String?,
@@ -699,7 +636,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
         super.viewDidLoad()
 
         let scrim = UIView()
-        scrim.backgroundColor = UIColor.black.withAlphaComponent(0.48)
+        scrim.backgroundColor = UIColor.black.withAlphaComponent(0.55)
         scrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrim)
         NSLayoutConstraint.activate([
@@ -709,37 +646,47 @@ final class OldOSJavaScriptAlertController: UIViewController {
             scrim.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        let card = UIView()
+        // Card: stessa sfumatura blu-grigia della barra (barGradient), non
+        // più una carta bianca — è questo il dettaglio che mancava per
+        // essere identica alla foto di riferimento.
         card.translatesAutoresizingMaskIntoConstraints = false
-        card.layer.cornerRadius = 10
+        card.layer.cornerRadius = 13
         card.layer.masksToBounds = true
         card.layer.borderWidth = 1
-        card.layer.borderColor = UIColor(white: 0.08, alpha: 0.85).cgColor
-        card.backgroundColor = UIColor(white: 0.91, alpha: 1)
+        card.layer.borderColor = UIColor(white: 0.12, alpha: 0.85).cgColor
         view.addSubview(card)
 
-        let width = min(UIScreen.main.bounds.width - 40, 280)
+        let width = min(UIScreen.main.bounds.width - 56, 270)
         NSLayoutConstraint.activate([
             card.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             card.widthAnchor.constraint(equalToConstant: width)
         ])
 
-        let topGradient = CAGradientLayer()
-        topGradient.colors = [
-            UIColor(white: 0.98, alpha: 1).cgColor,
-            UIColor(white: 0.78, alpha: 1).cgColor
+        cardGradient.colors = [
+            UIColor(red: 180 / 255, green: 191 / 255, blue: 205 / 255, alpha: 1).cgColor,
+            UIColor(red: 136 / 255, green: 155 / 255, blue: 179 / 255, alpha: 1).cgColor,
+            UIColor(red: 128 / 255, green: 149 / 255, blue: 175 / 255, alpha: 1).cgColor,
+            UIColor(red: 110 / 255, green: 133 / 255, blue: 162 / 255, alpha: 1).cgColor
         ]
-        topGradient.locations = [0, 1]
-        topGradient.frame = CGRect(x: 0, y: 0, width: width, height: 1)
-        card.layer.addSublayer(topGradient)
+        cardGradient.locations = [0, 0.49, 0.49, 1.0]
+        card.layer.insertSublayer(cardGradient, at: 0)
+
+        let topHighlight = CAGradientLayer()
+        topHighlight.colors = [
+            UIColor.white.withAlphaComponent(0.55).cgColor,
+            UIColor.white.withAlphaComponent(0.0).cgColor
+        ]
+        card.layer.insertSublayer(topHighlight, above: cardGradient)
+        self.topHighlightLayer = topHighlight
 
         let stack = UIStackView()
         stack.axis = .vertical
-        stack.spacing = 0
+        stack.spacing = 8
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.layoutMargins = UIEdgeInsets(top: 18, left: 16, bottom: 16, right: 16)
         stack.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(stack)
-
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
@@ -750,22 +697,28 @@ final class OldOSJavaScriptAlertController: UIViewController {
         let titleLabel = UILabel()
         titleLabel.text = alertTitle?.isEmpty == false ? alertTitle : "Safari"
         titleLabel.textAlignment = .center
-        titleLabel.font = UIFont(name: "HelveticaNeue-Bold", size: 18) ?? .boldSystemFont(ofSize: 18)
-        titleLabel.textColor = .black
+        titleLabel.font = UIFont(name: "HelveticaNeue-Bold", size: 17) ?? .boldSystemFont(ofSize: 17)
+        titleLabel.textColor = .white
         titleLabel.numberOfLines = 2
-        titleLabel.setContentHuggingPriority(.required, for: .vertical)
-        titleLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
+        titleLabel.layer.shadowColor = UIColor.black.withAlphaComponent(0.45).cgColor
+        titleLabel.layer.shadowOffset = CGSize(width: 0, height: -1)
+        titleLabel.layer.shadowOpacity = 1
+        titleLabel.layer.shadowRadius = 0
         stack.addArrangedSubview(titleLabel)
 
         let messageLabel = UILabel()
         messageLabel.text = message
         messageLabel.textAlignment = .center
-        messageLabel.font = UIFont(name: "HelveticaNeue", size: 15) ?? .systemFont(ofSize: 15)
-        messageLabel.textColor = UIColor(white: 0.12, alpha: 1)
+        messageLabel.font = UIFont(name: "HelveticaNeue", size: 14) ?? .systemFont(ofSize: 14)
+        messageLabel.textColor = .white
         messageLabel.numberOfLines = 0
         messageLabel.lineBreakMode = .byWordWrapping
-        messageLabel.layoutMargins = UIEdgeInsets(top: 0, left: 18, bottom: 10, right: 18)
+        messageLabel.layer.shadowColor = UIColor.black.withAlphaComponent(0.4).cgColor
+        messageLabel.layer.shadowOffset = CGSize(width: 0, height: -1)
+        messageLabel.layer.shadowOpacity = 1
+        messageLabel.layer.shadowRadius = 0
         stack.addArrangedSubview(messageLabel)
+        stack.setCustomSpacing(14, after: messageLabel)
 
         if let initialText {
             let field = UITextField()
@@ -775,43 +728,73 @@ final class OldOSJavaScriptAlertController: UIViewController {
             field.backgroundColor = .white
             field.layer.cornerRadius = 6
             field.layer.borderWidth = 1
-            field.layer.borderColor = UIColor(white: 0.55, alpha: 1).cgColor
+            field.layer.borderColor = UIColor(white: 0.35, alpha: 1).cgColor
             field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 7, height: 1))
             field.leftViewMode = .always
             field.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 7, height: 1))
             field.rightViewMode = .always
             field.heightAnchor.constraint(equalToConstant: 32).isActive = true
             field.translatesAutoresizingMaskIntoConstraints = false
-            stack.setCustomSpacing(10, after: messageLabel)
             stack.addArrangedSubview(field)
+            stack.setCustomSpacing(14, after: field)
             input = field
         }
 
-        let separator = UIView()
-        separator.backgroundColor = UIColor(white: 0.67, alpha: 1)
-        separator.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
-        stack.addArrangedSubview(separator)
-
+        // Pulsanti pillola affiancati (non una lista divisa da linee): la
+        // stessa geometria/chrome di OldOSRectangleButton, riprodotta qui in
+        // UIKit puro perché questo controller non vive in SwiftUI.
         let buttonRow = UIStackView()
         buttonRow.axis = .horizontal
+        buttonRow.spacing = 10
         buttonRow.distribution = .fillEqually
-        buttonRow.spacing = 1 / UIScreen.main.scale
-        buttonRow.backgroundColor = UIColor(white: 0.67, alpha: 1)
-        buttonRow.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(buttonRow)
+        buttonRow.heightAnchor.constraint(equalToConstant: 33).isActive = true
 
         for (index, item) in buttons.enumerated() {
-            let button = UIButton(type: .custom)
-            button.tag = index
-            button.setTitle(item.0, for: .normal)
-            button.titleLabel?.font = UIFont(name: "HelveticaNeue-Bold", size: 17) ?? .boldSystemFont(ofSize: 17)
-            button.setTitleColor(
-                item.1 == .cancel ? UIColor(white: 0.18, alpha: 1) : UIColor(red: 0.05, green: 0.32, blue: 0.67, alpha: 1),
-                for: .normal
-            )
-            button.backgroundColor = UIColor(white: 0.91, alpha: 1)
-            button.addTarget(self, action: #selector(handleButton(_:)), for: .touchUpInside)
+            let button = makePillButton(title: item.0, tag: index)
             buttonRow.addArrangedSubview(button)
+        }
+    }
+
+    private var topHighlightLayer: CAGradientLayer?
+
+    private func makePillButton(title: String, tag: Int) -> UIButton {
+        let button = UIButton(type: .custom)
+        button.tag = tag
+        button.setTitle(title, for: .normal)
+        button.titleLabel?.font = UIFont(name: "HelveticaNeue-Bold", size: 15) ?? .boldSystemFont(ofSize: 15)
+        button.setTitleColor(.white, for: .normal)
+        button.titleLabel?.layer.shadowColor = UIColor.black.withAlphaComponent(0.6).cgColor
+        button.titleLabel?.layer.shadowOffset = CGSize(width: 0, height: -1)
+        button.titleLabel?.layer.shadowOpacity = 1
+        button.titleLabel?.layer.shadowRadius = 0
+        button.layer.cornerRadius = 6
+        button.layer.masksToBounds = true
+        button.layer.borderWidth = 0.75
+        button.layer.borderColor = UIColor.black.withAlphaComponent(0.35).cgColor
+        button.addTarget(self, action: #selector(handleButton(_:)), for: .touchUpInside)
+
+        let gradient = CAGradientLayer()
+        gradient.colors = [
+            UIColor(red: 142 / 255, green: 166 / 255, blue: 196 / 255, alpha: 1).cgColor,
+            UIColor(red: 88 / 255, green: 119 / 255, blue: 166 / 255, alpha: 1).cgColor,
+            UIColor(red: 71 / 255, green: 105 / 255, blue: 153 / 255, alpha: 1).cgColor,
+            UIColor(red: 74 / 255, green: 108 / 255, blue: 155 / 255, alpha: 1).cgColor
+        ]
+        gradient.locations = [0, 0.50, 0.533, 1]
+        gradient.cornerRadius = 6
+        button.layer.insertSublayer(gradient, at: 0)
+        buttonGradients.append((button, gradient))
+        return button
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        cardGradient.frame = card.bounds
+        topHighlightLayer?.frame = CGRect(x: 0, y: 0, width: card.bounds.width, height: min(card.bounds.height * 0.4, 40))
+        for (button, gradient) in buttonGradients {
+            gradient.frame = button.bounds
         }
     }
 

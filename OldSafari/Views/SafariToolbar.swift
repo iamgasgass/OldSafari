@@ -84,30 +84,14 @@ struct SafariToolbar: View {
                             action: onShare,
                             onLongPress: onDownloadsTap
                         )
-                        .overlay {
+                        .overlay(alignment: .topTrailing) {
                             if downloadCount > 0 {
-                                // FIX "maniacale": invece di un offset a numero
-                                // fisso (indovinato a occhio e mai abbastanza
-                                // preciso), calcoliamo la posizione a runtime
-                                // sulle dimensioni REALI del pulsante. Il
-                                // pulsante occupa l'intera riga 45pt della
-                                // toolbar ("il touch bar di iOS sottostante");
-                                // il glifo NavAction è centrato verticalmente
-                                // al suo interno ("la sezione sharesheet
-                                // soprastante"). Il badge va quindi centrato
-                                // esattamente a metà strada tra il bordo
-                                // inferiore del glifo e il bordo inferiore
-                                // della riga: usiamo GeometryReader + .position
-                                // in modo che resti corretto anche se le
-                                // dimensioni dell'asset NavAction cambiassero.
-                                GeometryReader { proxy in
-                                    DownloadBadge(count: downloadCount)
-                                        .position(
-                                            x: proxy.size.width - 9,
-                                            y: proxy.size.height * 0.80
-                                        )
-                                }
-                                .allowsHitTesting(false)
+                                // Ripristinato l'offset fisso della versione
+                                // precedente al tentativo con GeometryReader,
+                                // che risultava mal posizionato.
+                                DownloadBadge(count: downloadCount)
+                                    .offset(x: -4, y: 20)
+                                    .allowsHitTesting(false)
                             }
                         }
 
@@ -198,9 +182,6 @@ struct SafariToolbar: View {
 
 /// The small red pill badge iOS uses on tab bar icons, redrawn with iOS 6
 /// glossy highlight so it lives comfortably on the OldOS toolbar chrome.
-///
-/// Esposta (non più `private`) perché ora la riutilizziamo anche accanto
-/// alla voce "Downloads" nella share sheet (vedi SafariActionsView.swift).
 struct DownloadBadge: View {
     let count: Int
 
