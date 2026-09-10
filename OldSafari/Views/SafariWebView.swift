@@ -21,42 +21,7 @@ struct SafariWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: "oldSafariContextMenu")
         controller.addUserScript(
             WKUserScript(
-                source: """
-                (function() {
-                  if (window.__oldSafariContextMenuInstalled) return;
-                  window.__oldSafariContextMenuInstalled = true;
-                  window.__oldSafariLastImageSrc = null;
-
-                  function resolveImage(x, y) {
-                    var node = document.elementFromPoint(x, y);
-                    if (!node) return null;
-                    var image = node.closest ? node.closest('img') : null;
-                    if (!image) return null;
-                    return image.currentSrc || image.src || image.getAttribute('src') || null;
-                  }
-
-                  function report(src) {
-                    window.__oldSafariLastImageSrc = src;
-                    try {
-                      window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: src});
-                    } catch (e) {}
-                  }
-
-                  document.addEventListener('touchstart', function(event) {
-                    var t = event.touches && event.touches[0];
-                    if (!t) return;
-                    report(resolveImage(t.clientX, t.clientY));
-                  }, true);
-
-                  document.addEventListener('contextmenu', function(event) {
-                    var node = event.target;
-                    var image = node && node.closest ? node.closest('img') : null;
-                    if (image) {
-                      report(image.currentSrc || image.src || image.getAttribute('src') || null);
-                    }
-                  }, true);
-                })();
-                """,
+                source: "(function() {\n    if (window.__oldSafariContextMenuInstalled) return;\n    window.__oldSafariContextMenuInstalled = true;\n    document.addEventListener(\"contextmenu\", function(event) {\n        var node = event.target;\n        if (!node) return;\n        var image = node.closest ? node.closest(\"img\") : null;\n        if (!image) {\n            window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: null});\n            return;\n        }\n        var src = image.currentSrc || image.src || image.getAttribute(\"src\") || \"\";\n        window.webkit.messageHandlers.oldSafariContextMenu.postMessage({src: src});\n    }, true);\n})();",
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: false
             )
@@ -66,12 +31,16 @@ struct SafariWebView: UIViewRepresentable {
             webView.isFindInteractionEnabled = true
         }
 
+        // Swipe navigation and interactive keyboard dismissal make the browser
+        // feel native on modern hardware without touching the iOS 6 chrome.
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = true
         webView.scrollView.keyboardDismissMode = .interactive
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.scrollsToTop = true
 
+        // Pull to refresh, like the current Safari. Guarded because the same
+        // WKWebView is also mounted by the tab switcher.
         context.coordinator.webView = webView
         context.coordinator.onOpenInNewTab = onOpenInNewTab
         if webView.scrollView.refreshControl == nil {
@@ -88,6 +57,8 @@ struct SafariWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
+        // WKWebView is owned by SafariTab. Recreating or reloading it from
+        // SwiftUI updates would destroy scroll position and navigation state.
         context.coordinator.onOpenInNewTab = onOpenInNewTab
     }
 
@@ -132,6 +103,8 @@ struct SafariWebView: UIViewRepresentable {
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
+            // target="_blank" / window.open: hand the link to a new page when
+            // the browser chrome offers one, otherwise keep it in this page.
             if navigationAction.targetFrame == nil,
                let url = navigationAction.request.url {
                 if let onOpenInNewTab {
@@ -156,6 +129,9 @@ struct SafariWebView: UIViewRepresentable {
                 return
             }
 
+            // Custom scheme used by the blob download shim in SafariTab.
+            // The URL carries `?name=...&data=<base64>` and we materialise it
+            // as a real file under the app's Downloads directory.
             if scheme == "oldsafari-download" {
                 handleBlobDownload(url: url)
                 decisionHandler(.cancel)
@@ -177,6 +153,10 @@ struct SafariWebView: UIViewRepresentable {
 
         // MARK: Download detection
 
+        /// The response phase is where WebKit tells us the MIME type and
+        /// headers. Anything the browser cannot render inline (attachment,
+        /// unknown MIME, application/octet-stream) is redirected to the
+        /// download machinery, exactly like the current Safari does.
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -196,34 +176,27 @@ struct SafariWebView: UIViewRepresentable {
             let notRenderable = !navigationResponse.canShowMIMEType
             let downloadishMIME = mime == "application/octet-stream"
                 || mime.hasPrefix("application/zip")
-                || (mime.hasPrefix("application/pdf") && isAttachment)
+                || mime.hasPrefix("application/pdf") && isAttachment
                 || mime.hasPrefix("application/x-")
                 || mime.hasPrefix("application/vnd")
                 || mime.hasPrefix("audio/")
-                || (mime.hasPrefix("video/") && isAttachment)
+                || mime.hasPrefix("video/") && isAttachment
 
             if isAttachment || notRenderable || downloadishMIME {
                 let suggested = filenameHint(response: response, url: requestURL)
-                let host = requestURL.host ?? "this server"
-
-                presentOldOSAlert(
-                    title: "Safari",
-                    message: "Do you want to download \"\(suggested)\" from \"\(host)\"?",
-                    buttons: [("Cancel", .cancel), ("Download", .default)]
-                ) { [weak self] _, index in
-                    guard index == 1 else {
-                        decisionHandler(.cancel)
-                        return
-                    }
-                    self?.pendingHint = (suggested, requestURL)
-                    decisionHandler(.download)
-                }
+                // Prime the download entry so the manager can match it up
+                // when WKDownload calls back. WKWebView will hand us the
+                // real `WKDownload` in `navigationResponseDidBecomeDownload`.
+                pendingHint = (suggested, requestURL)
+                decisionHandler(.download)
                 return
             }
 
             decisionHandler(.allow)
         }
 
+        /// Filled in from `decidePolicyFor:navigationResponse:` so we can
+        /// carry the suggested filename into `didBecome`.
         private var pendingHint: (String, URL)?
 
         func webView(
@@ -237,7 +210,10 @@ struct SafariWebView: UIViewRepresentable {
                 suggestedFilename: source.lastPathComponent,
                 using: download
             )
-            NotificationCenter.default.post(name: .oldSafariDownloadStarted, object: nil)
+            NotificationCenter.default.post(
+                name: .oldSafariDownloadStarted,
+                object: nil
+            )
         }
 
         func webView(
@@ -260,7 +236,10 @@ struct SafariWebView: UIViewRepresentable {
                 suggestedFilename: filename,
                 using: download
             )
-            NotificationCenter.default.post(name: .oldSafariDownloadStarted, object: nil)
+            NotificationCenter.default.post(
+                name: .oldSafariDownloadStarted,
+                object: nil
+            )
         }
 
         private func filenameHint(response: HTTPURLResponse, url: URL) -> String {
@@ -310,11 +289,17 @@ struct SafariWebView: UIViewRepresentable {
                     sourceURL: url,
                     suggestedFilename: destination.lastPathComponent
                 )
-                entry.updateProgress(received: Int64(data.count), expected: Int64(data.count))
+                entry.updateProgress(
+                    received: Int64(data.count),
+                    expected: Int64(data.count)
+                )
                 entry.markCompleted(at: destination)
                 DispatchQueue.main.async {
                     SafariDownloadManager.shared.register(entry)
-                    NotificationCenter.default.post(name: .oldSafariDownloadStarted, object: nil)
+                    NotificationCenter.default.post(
+                        name: .oldSafariDownloadStarted,
+                        object: nil
+                    )
                 }
             } catch {
                 // Silently ignore; the shim is best-effort by nature.
@@ -328,6 +313,8 @@ struct SafariWebView: UIViewRepresentable {
             didFailProvisionalNavigation navigation: WKNavigation?,
             withError error: Error
         ) {
+            // NSURLErrorCancelled (-999) is expected for interrupted loads.
+            // WKWebView has no useful UI state to expose for it.
             webView.scrollView.refreshControl?.endRefreshing()
         }
 
@@ -364,9 +351,13 @@ struct SafariWebView: UIViewRepresentable {
                 buttons: buttons,
                 text: textField
             ) { [weak presenter] value, index in
+                // WKWebView's completion handler must be called before the
+                // presentation controller is torn down. Doing it here also
+                // guarantees it is invoked exactly once.
                 completion(value, index)
                 presenter?.dismiss(animated: true)
             }
+
             alert.modalPresentationStyle = .overFullScreen
             alert.modalTransitionStyle = .crossDissolve
             alert.view.backgroundColor = .clear
@@ -416,7 +407,7 @@ struct SafariWebView: UIViewRepresentable {
             }
         }
 
-        // MARK: Long press on a link / image
+        // MARK: Long press on a link
 
         func webView(
             _ webView: WKWebView,
@@ -424,198 +415,124 @@ struct SafariWebView: UIViewRepresentable {
             completionHandler: @escaping (UIContextMenuConfiguration?) -> Void
         ) {
             let linkURL = elementInfo.linkURL
-            let pageURL = webView.url
+            let imageURL = contextMenuImageURL
+            contextMenuImageURL = nil
 
-            webView.evaluateJavaScript("window.__oldSafariLastImageSrc || ''") { [weak self] result, _ in
-                guard let self else {
-                    completionHandler(nil)
-                    return
+            guard linkURL != nil || imageURL != nil else {
+                completionHandler(nil)
+                return
+            }
+
+            let configuration = UIContextMenuConfiguration(
+                identifier: nil,
+                previewProvider: nil
+            ) { [weak self] _ in
+                var actions: [UIAction] = []
+
+                if let imageURL {
+                    let saveImage = UIAction(
+                        title: "Save Image",
+                        image: UIImage(systemName: "square.and.arrow.down")
+                    ) { [weak self] _ in
+                        self?.saveImageToPhotos(imageURL)
+                    }
+                    actions.append(saveImage)
                 }
-                let pulled = (result as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
-                let imageURL = pulled ?? self.contextMenuImageURL
-                self.contextMenuImageURL = nil
 
-                guard linkURL != nil || imageURL != nil else {
-                    completionHandler(nil)
-                    return
-                }
-
-                let configuration = UIContextMenuConfiguration(
-                    identifier: nil,
-                    previewProvider: nil
-                ) { [weak self] _ in
-                    guard let self else { return nil }
-                    var actions: [UIAction] = []
-
-                    if let imageURL {
-                        let saveImage = UIAction(
-                            title: "Save Image",
-                            image: UIImage(systemName: "square.and.arrow.down")
-                        ) { [weak self] _ in
-                            self?.confirmAndSaveImage(imageURL, pageURL: pageURL)
-                        }
-                        actions.append(saveImage)
+                if let linkURL {
+                    let open = UIAction(
+                        title: "Open",
+                        image: UIImage(systemName: "safari")
+                    ) { _ in
+                        webView.load(URLRequest(url: linkURL))
                     }
 
-                    if let linkURL {
-                        let open = UIAction(
-                            title: "Open",
-                            image: UIImage(systemName: "safari")
-                        ) { _ in
-                            webView.load(URLRequest(url: linkURL))
-                        }
-
-                        let newTab = UIAction(
-                            title: "Open in New Page",
-                            image: UIImage(systemName: "plus.square.on.square")
-                        ) { [weak self] _ in
-                            self?.onOpenInNewTab?(linkURL)
-                        }
-
-                        let copy = UIAction(
-                            title: "Copy Link",
-                            image: UIImage(systemName: "doc.on.doc")
-                        ) { _ in
-                            UIPasteboard.general.url = linkURL
-                        }
-
-                        let download = UIAction(
-                            title: "Download Linked File",
-                            image: UIImage(systemName: "arrow.down.circle")
-                        ) { _ in
-                            webView.load(URLRequest(url: linkURL))
-                        }
-
-                        actions.append(contentsOf: [open])
-                        if self.onOpenInNewTab != nil { actions.append(newTab) }
-                        actions.append(contentsOf: [copy, download])
-
-                        let share = UIAction(
-                            title: "Share…",
-                            image: UIImage(systemName: "square.and.arrow.up")
-                        ) { _ in
-                            let controller = UIActivityViewController(
-                                activityItems: [linkURL],
-                                applicationActivities: nil
-                            )
-                            controller.overrideUserInterfaceStyle = .unspecified
-                            controller.popoverPresentationController?.sourceView = webView
-                            webView.window?.rootViewController?.present(controller, animated: true)
-                        }
-                        actions.append(share)
+                    let newTab = UIAction(
+                        title: "Open in New Page",
+                        image: UIImage(systemName: "plus.square.on.square")
+                    ) { [weak self] _ in
+                        self?.onOpenInNewTab?(linkURL)
                     }
 
-                    return UIMenu(
-                        title: imageURL != nil ? "Image" : (linkURL?.absoluteString ?? ""),
-                        children: actions
-                    )
+                    let copy = UIAction(
+                        title: "Copy Link",
+                        image: UIImage(systemName: "doc.on.doc")
+                    ) { _ in
+                        UIPasteboard.general.url = linkURL
+                    }
+
+                    let download = UIAction(
+                        title: "Download Linked File",
+                        image: UIImage(systemName: "arrow.down.circle")
+                    ) { _ in
+                        webView.load(URLRequest(url: linkURL))
+                    }
+
+                    actions.append(contentsOf: [open])
+                    if self?.onOpenInNewTab != nil { actions.append(newTab) }
+                    actions.append(contentsOf: [copy, download])
+
+                    let share = UIAction(
+                        title: "Share…",
+                        image: UIImage(systemName: "square.and.arrow.up")
+                    ) { _ in
+                        let controller = UIActivityViewController(
+                            activityItems: [linkURL],
+                            applicationActivities: nil
+                        )
+                        controller.overrideUserInterfaceStyle = .unspecified
+                        controller.popoverPresentationController?.sourceView = webView
+                        webView.window?.rootViewController?.present(controller, animated: true)
+                    }
+                    actions.append(share)
                 }
 
-                completionHandler(configuration)
+                return UIMenu(title: imageURL != nil ? "Image" : (linkURL?.absoluteString ?? ""), children: actions)
             }
+
+            completionHandler(configuration)
         }
 
-        private func confirmAndSaveImage(_ url: URL, pageURL: URL?) {
-            presentOldOSAlert(
-                title: "Save Image",
-                message: "Save this image to your Photos?",
-                buttons: [("Cancel", .cancel), ("Save", .default)]
-            ) { [weak self] _, index in
-                guard index == 1 else { return }
-                self?.saveImageToPhotos(url, referer: pageURL)
-            }
-        }
-
-        private func saveImageToPhotos(_ url: URL, referer: URL?) {
-            var request = URLRequest(
+        /// WKContextMenuElementInfo supplies the resolved image URL, but does
+        /// not itself save anything. Fetch it as binary data, create a UIImage,
+        /// then use the Photos add-only API. This fixes "Save Image" on sites
+        /// such as Google Images without depending on WebKit's temporary cache.
+        private func saveImageToPhotos(_ url: URL) {
+            let request = URLRequest(
                 url: url,
                 cachePolicy: .reloadIgnoringLocalCacheData,
                 timeoutInterval: 30
             )
-            if let referer {
-                request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
-            }
-            request.setValue(
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
-                forHTTPHeaderField: "User-Agent"
-            )
 
-            URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-                guard let self else { return }
-
+            URLSession.shared.dataTask(with: request) { data, response, error in
                 guard
                     error == nil,
-                    let http = response as? HTTPURLResponse,
-                    (200...299).contains(http.statusCode),
                     let data,
                     let image = UIImage(data: data)
-                else {
-                    DispatchQueue.main.async {
-                        self.presentOldOSAlert(
-                            title: "Safari",
-                            message: "The image could not be downloaded.",
-                            buttons: [("OK", .default)]
-                        ) { _, _ in }
-                    }
-                    return
-                }
+                else { return }
 
                 PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-                    DispatchQueue.main.async {
-                        guard status == .authorized || status == .limited else {
-                            self.presentOldOSAlert(
-                                title: "Safari",
-                                message: "Safari does not have permission to save to Photos. Enable it in Settings.",
-                                buttons: [("OK", .default)]
-                            ) { _, _ in }
-                            return
-                        }
+                    guard status == .authorized || status == .limited else { return }
 
-                        PHPhotoLibrary.shared().performChanges {
-                            PHAssetChangeRequest.creationRequestForAsset(from: image)
-                        } completionHandler: { success, _ in
-                            DispatchQueue.main.async {
-                                self.presentOldOSAlert(
-                                    title: "Safari",
-                                    message: success ? "Image saved to Photos." : "The image could not be saved.",
-                                    buttons: [("OK", .default)]
-                                ) { _, _ in }
-                            }
-                        }
-                    }
+                    PHPhotoLibrary.shared().performChanges {
+                        PHAssetChangeRequest.creationRequestForAsset(from: image)
+                    } completionHandler: { _, _ in }
                 }
             }.resume()
         }
+
     }
 }
 
-/// A small, self-contained recreation of the classic iOS (pre-iOS 7)
-/// UIAlertView surface — replica fedele della foto "Data Isolation":
-///
-/// - Card con UN SOLO gradiente blu continuo dall'alto al basso (niente
-///   chrome separato per i pulsanti: sono trasparenti e mostrano lo stesso
-///   sfondo della card, esattamente come nell'originale).
-/// - Titolo bianco grassetto + messaggio bianco regolare, entrambi con
-///   ombra nera SOTTO il testo (effetto inciso).
-/// - Una linea sottile orizzontale separa il testo dalla riga pulsanti.
-/// - I pulsanti NON sono pillole separate: sono un'unica striscia a tutta
-///   larghezza, divisa da una linea sottile verticale — così come appare
-///   nella foto di riferimento (era l'errore principale della versione
-///   precedente, che disegnava due pillole con chrome proprio e spazio
-///   tra loro).
-final class OldOSJavaScriptAlertController: UIViewController {
+
 /// Replica fedele dell'alert di sistema iOS 6 (rif. foto "Data Isolation" /
-/// permessi localizzazione):
-/// - Card blu navy con gradiente verticale, bordo scuro + rim chiaro interno,
-///   riflesso lucido diagonale nella metà superiore, ombra portata verso il
-///   basso sullo sfondo scurito.
-/// - Titolo e messaggio bianchi, grassetto/regular, con ombra "incisa" verso
-///   il basso (y: +1, nessuna sfocatura) — mai verso l'alto.
-/// - I pulsanti sono DUE PILLOLE SEPARATE (non una striscia unica): ognuna ha
-///   angoli propri arrotondati, un gradiente proprio più chiaro e desaturato
-///   rispetto al corpo della card, un margine visibile dal bordo della card
-///   e uno spazio (gap) tra loro — esattamente come "Don't Allow" / "OK"
-///   nella foto di riferimento.
+/// permessi localizzazione): card blu navy con gradiente verticale, doppio
+/// bordo (scuro esterno + rim chiaro interno), riflesso lucido diagonale,
+/// ombra portata sullo sfondo scurito, testo bianco con ombra "incisa" verso
+/// il basso, e due pulsanti come PILLOLE SEPARATE (proprio gradiente più
+/// chiaro, angoli propri, margine tra loro e dal bordo della card) — non una
+/// striscia unica. Non usa UIAlertController perché quel controllo adotta il
+/// linguaggio visivo di iOS moderno e non può replicare il chrome originale.
 final class OldOSJavaScriptAlertController: UIViewController {
 
     enum ButtonKind {
@@ -635,8 +552,8 @@ final class OldOSJavaScriptAlertController: UIViewController {
     private let cardGradient = CAGradientLayer()
     private var topHighlightLayer: CAGradientLayer?
     private var rimLayer: CAShapeLayer?
-    private var buttonGradients: [CAGradientLayer] = []
-    private var buttonViews: [UIView] = []
+    private var buttonGradients: [(CAGradientLayer, CAGradientLayer)] = []
+    private var buttonContainers: [UIView] = []
 
     init(
         title: String?,
@@ -670,8 +587,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
             scrim.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        // Contenitore esterno non ritagliato, per proiettare l'ombra portata
-        // (nella foto la card "galleggia" sopra lo sfondo scurito).
         let shadowContainer = UIView()
         shadowContainer.translatesAutoresizingMaskIntoConstraints = false
         shadowContainer.layer.shadowColor = UIColor.black.cgColor
@@ -700,9 +615,8 @@ final class OldOSJavaScriptAlertController: UIViewController {
             card.bottomAnchor.constraint(equalTo: shadowContainer.bottomAnchor)
         ])
 
-        // Gradiente verticale blu navy del corpo della card — campionato
-        // dalla foto di riferimento (blu-grigio chiaro in alto, navy scuro
-        // in basso, senza banda a metà: qui è un continuum, non due toni).
+        // Gradiente verticale blu navy campionato dalla foto di riferimento:
+        // blu-grigio chiaro in alto, navy scuro in basso, continuum unico.
         cardGradient.colors = [
             UIColor(red: 126 / 255, green: 138 / 255, blue: 163 / 255, alpha: 1).cgColor,
             UIColor(red: 79 / 255,  green: 95 / 255,  blue: 130 / 255, alpha: 1).cgColor,
@@ -712,8 +626,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
         cardGradient.locations = [0, 0.18, 0.55, 1.0]
         card.layer.insertSublayer(cardGradient, at: 0)
 
-        // Riflesso lucido diagonale nella metà superiore, tipico chrome
-        // iOS 6: banda bianca semitrasparente che si dissolve verso il basso.
         let topHighlight = CAGradientLayer()
         topHighlight.colors = [
             UIColor.white.withAlphaComponent(0.38).cgColor,
@@ -722,8 +634,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
         card.layer.insertSublayer(topHighlight, above: cardGradient)
         self.topHighlightLayer = topHighlight
 
-        // Rim chiaro sottile appena all'interno del bordo scuro esterno —
-        // il doppio bordo "vetroso" visibile nella foto.
         let rim = CAShapeLayer()
         rim.fillColor = UIColor.clear.cgColor
         rim.strokeColor = UIColor.white.withAlphaComponent(0.3).cgColor
@@ -743,7 +653,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
             outerStack.bottomAnchor.constraint(equalTo: card.bottomAnchor)
         ])
 
-        // Blocco testo: titolo + messaggio + eventuale campo.
         let textStack = UIStackView()
         textStack.axis = .vertical
         textStack.spacing = 6
@@ -794,22 +703,18 @@ final class OldOSJavaScriptAlertController: UIViewController {
             field.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 7, height: 1))
             field.rightViewMode = .always
             field.heightAnchor.constraint(equalToConstant: 32).isActive = true
+            field.translatesAutoresizingMaskIntoConstraints = false
             textStack.setCustomSpacing(10, after: messageLabel)
             textStack.addArrangedSubview(field)
             input = field
         }
 
-        // Linea sottile che separa il blocco testo dalla riga pulsanti.
         let hDivider = UIView()
         hDivider.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         hDivider.translatesAutoresizingMaskIntoConstraints = false
         hDivider.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
         outerStack.addArrangedSubview(hDivider)
 
-        // Riga pulsanti: contenitore con margini, dentro il quale le
-        // pillole hanno spaziatura propria — replica esatta della foto,
-        // dove i pulsanti NON toccano i bordi della card né si toccano
-        // tra loro.
         let buttonRow = UIStackView()
         buttonRow.axis = .horizontal
         buttonRow.spacing = 8
@@ -818,22 +723,17 @@ final class OldOSJavaScriptAlertController: UIViewController {
         buttonRow.layoutMargins = UIEdgeInsets(top: 10, left: 10, bottom: 12, right: 10)
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
         outerStack.addArrangedSubview(buttonRow)
-        buttonRow.heightAnchor.constraint(equalToConstant: 44 + 22).isActive = true
+        buttonRow.heightAnchor.constraint(equalToConstant: 66).isActive = true
 
         for (index, item) in buttons.enumerated() {
-            let (pill, gradient) = makePillButton(title: item.0, tag: index)
+            let (pill, gradient, highlight) = makePillButton(title: item.0, tag: index)
             buttonRow.addArrangedSubview(pill)
-            buttonViews.append(pill)
-            buttonGradients.append(gradient)
+            buttonContainers.append(pill)
+            buttonGradients.append((gradient, highlight))
         }
     }
 
-    /// Pulsante "pillola": angoli propri arrotondati, bordo scuro sottile,
-    /// gradiente proprio più chiaro e desaturato rispetto al corpo della
-    /// card (blu-grigio chiaro in alto -> blu medio in basso), riflesso
-    /// lucido nella metà superiore — replica esatta dello stile visto in
-    /// "Don't Allow" / "OK" nella foto di riferimento.
-    private func makePillButton(title: String, tag: Int) -> (UIView, CAGradientLayer) {
+    private func makePillButton(title: String, tag: Int) -> (UIView, CAGradientLayer, CAGradientLayer) {
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.layer.cornerRadius = 8
@@ -874,8 +774,8 @@ final class OldOSJavaScriptAlertController: UIViewController {
         button.addTarget(self, action: #selector(handleButton(_:)), for: .touchUpInside)
         button.addTarget(self, action: #selector(handlePillHighlight(_:)), for: [.touchDown, .touchDragEnter])
         button.addTarget(self, action: #selector(handlePillUnhighlight(_:)), for: [.touchDragExit, .touchCancel, .touchUpInside, .touchUpOutside])
-
         button.translatesAutoresizingMaskIntoConstraints = false
+
         container.addSubview(button)
         NSLayoutConstraint.activate([
             button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -884,11 +784,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
             button.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
 
-        container.tag = 1000 + tag
-        objc_setAssociatedObject(container, &AssociatedKeys.gradientKey, gradient, .OBJC_ASSOCIATION_RETAIN)
-        objc_setAssociatedObject(container, &AssociatedKeys.highlightKey, highlight, .OBJC_ASSOCIATION_RETAIN)
-
-        return (container, gradient)
+        return (container, gradient, highlight)
     }
 
     @objc private func handlePillHighlight(_ sender: UIButton) {
@@ -913,15 +809,13 @@ final class OldOSJavaScriptAlertController: UIViewController {
             cornerRadius: 11.5
         ).cgPath
 
-        for view in buttonViews {
-            guard let gradient = objc_getAssociatedObject(view, &AssociatedKeys.gradientKey) as? CAGradientLayer,
-                  let highlight = objc_getAssociatedObject(view, &AssociatedKeys.highlightKey) as? CAGradientLayer
-            else { continue }
-            gradient.frame = view.bounds
+        for (index, container) in buttonContainers.enumerated() {
+            let (gradient, highlight) = buttonGradients[index]
+            gradient.frame = container.bounds
             highlight.frame = CGRect(
                 x: 0, y: 0,
-                width: view.bounds.width,
-                height: view.bounds.height * 0.5
+                width: container.bounds.width,
+                height: container.bounds.height * 0.5
             )
         }
     }
@@ -940,9 +834,4 @@ final class OldOSJavaScriptAlertController: UIViewController {
         didFinish = true
         completion(input?.text, index)
     }
-}
-
-private struct AssociatedKeys {
-    static var gradientKey = "gradientKey"
-    static var highlightKey = "highlightKey"
 }
