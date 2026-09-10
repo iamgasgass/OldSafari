@@ -86,11 +86,12 @@ struct SafariToolbar: View {
                         )
                         .overlay(alignment: .topTrailing) {
                             if downloadCount > 0 {
-                                // Ripristinato l'offset fisso della versione
-                                // precedente al tentativo con GeometryReader,
-                                // che risultava mal posizionato.
+                                // Spostato ulteriormente più in basso rispetto
+                                // alla versione precedente (y:20 -> y:26) per
+                                // staccarlo di più dalla sezione dell'icona
+                                // "sharesheet" sovrastante.
                                 DownloadBadge(count: downloadCount)
-                                    .offset(x: -4, y: 20)
+                                    .offset(x: -4, y: 26)
                                     .allowsHitTesting(false)
                             }
                         }
