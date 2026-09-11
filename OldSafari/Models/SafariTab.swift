@@ -95,13 +95,43 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
         observeWebView()
 
         if let url {
-            if deferLoad {
-                pendingURL = url
-                self.url = url
-                self.isSecure = url.scheme?.lowercased() == "https"
-            } else {
-                webView.load(URLRequest(url: url))
-            }
+            // FIX for "Download IPA opens a permanently blank new tab":
+            // this used to branch on `deferLoad` and call
+            // `webView.load(...)` immediately when it was `false` — the
+            // default used by every tab opened via `window.open()` /
+            // target="_blank" (SafariRootView's `onOpenInNewTab` calls
+            // `store.addTab(url:)` with no `deferLoad` argument). That
+            // `.load()` call ran synchronously right here, inside this
+            // initializer — but `webView.navigationDelegate` and
+            // `.uiDelegate` are ONLY ever assigned in
+            // `SafariWebView.makeUIView`, which SwiftUI only invokes on a
+            // LATER render pass, after `tabs.append(tab)` schedules a UI
+            // update. There is a real, multi-runloop-turn gap between
+            // "tab object constructed" and "tab actually mounted with a
+            // delegate attached". Any navigation started in that gap
+            // proceeds with NO delegate at all: `decidePolicyFor(
+            // navigationAction:)`, `shouldPerformDownload`, the
+            // extension-based download detection, and the download
+            // confirmation alert never ran for it, because there was no
+            // delegate around to call them. WebKit's default behaviour
+            // with no navigation delegate is to just allow the load and
+            // try to render the response inline — for a binary .ipa
+            // response that produces exactly the empty/blank tab that was
+            // reported, and no fix inside the Coordinator itself could
+            // ever have helped, because the Coordinator was never in the
+            // loop for that specific request.
+            //
+            // The fix: ALWAYS defer, unconditionally. `activateIfNeeded()`
+            // is the only code path allowed to call `webView.load()` for
+            // an initial URL, and it is only ever invoked from
+            // `makeUIView` — which, after the matching fix there, sets
+            // both delegates BEFORE calling it. This guarantees every
+            // single first navigation, however the tab was created, has
+            // its delegate fully attached before any request leaves the
+            // device.
+            pendingURL = url
+            self.url = url
+            self.isSecure = url.scheme?.lowercased() == "https"
         }
     }
 
@@ -320,37 +350,17 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
         <!doctype html>
         <html>
         <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=3">
-        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>\(escapedTitle)</title>
         <style>
-        @media (prefers-color-scheme: dark) {
-            body { background: #191919; color: #EEE; }
-            a { color: #7FB5FF; }
-        }
-        html, body {
-            margin: 0; padding: 0;
-            background: #F5F0E4;
-            color: #1B1B1B;
-            font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
-            font-size: 19px;
-            line-height: 1.55;
-        }
-        main { max-width: 640px; margin: 0 auto; padding: 34px 22px 60px; }
-        h1 { font-size: 26px; line-height: 1.2; margin: 0 0 24px; font-weight: 700; }
-        h2, h3 { line-height: 1.25; }
-        img, video, iframe { max-width: 100%; height: auto; border-radius: 6px; }
-        pre { white-space: pre-wrap; font-family: Menlo, monospace; font-size: 15px; background: rgba(0,0,0,0.05); padding: 10px; border-radius: 6px; }
-        blockquote { border-left: 3px solid #B79766; margin: 0 0 16px; padding: 4px 12px; color: #444; }
-        a { color: #1866A6; text-decoration: none; }
-        a:hover { text-decoration: underline; }
+        body { font-family: -apple-system, "HelveticaNeue", sans-serif; background: #f7f3ea; color: #1c1c1e; padding: 20px; line-height: 1.5; font-size: 19px; }
+        h1 { font-size: 26px; margin-bottom: 12px; }
+        img { max-width: 100%; height: auto; }
         </style>
         </head>
         <body>
-        <main>
         <h1>\(escapedTitle)</h1>
         \(body)
-        </main>
         </body>
         </html>
         """
