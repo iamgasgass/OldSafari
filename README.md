@@ -22,13 +22,13 @@ This is not a theme layered over the system browser. OldSafari is rebuilt as a s
 - Inline loading progress, HTTPS indicator, and reload/stop control.
 - Unified local library for bookmarks and browsing history.
 - Modern browser actions including Find on Page, Request Desktop Website, native share sheet, and copy link.
-- Proper handoff of external schemes such as `tel:`, `mailto:`, and `maps:` to iOS.
-- An unsigned IPA build workflow for GitHub Actions.
 - A complete Downloads manager built on `WKDownload`, with an iOS 6 styled confirmation alert, live per-file progress rendered with the exact same glossy fill as the address bar, persistent download history across app launches, and Open / Share / Delete actions.
 - Custom-built iOS 6 styled JavaScript `alert()`, `confirm()`, and `prompt()` panels, replacing the modern system `UIAlertController` chrome for web-triggered dialogs.
 - Reader Mode with automatic per-page availability detection.
 - A per-tab Content Blocker toggle, persisted across sessions.
 - Long-press context menus on links and images, including Save Image to Photos.
+- Proper handoff of external schemes such as `tel:`, `mailto:`, and `maps:` to iOS.
+- An unsigned IPA build workflow for GitHub Actions.
 
 ## Interface Fidelity
 
