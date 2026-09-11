@@ -16,6 +16,25 @@ struct SafariWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
+        // FIX for "Download IPA opens a blank new tab and nothing happens":
+        // WKWebView's secure default is `javaScriptCanOpenWindowsAutomatically
+        // = false`, which makes WebKit silently BLOCK any `window.open()`
+        // call that it cannot tie directly and synchronously to the user's
+        // tap. Sites like spooferpro.com's install page fetch an AltStore-
+        // style JSON manifest (containing the real "downloadURL") via
+        // JavaScript first, and only call `window.open()` once that async
+        // fetch resolves — by then WebKit no longer considers it a trusted
+        // user gesture and blocks the popup outright. When WebKit blocks a
+        // popup this way, `createWebViewWith` is never even invoked, so no
+        // amount of fixing `decidePolicyFor` inside this Coordinator could
+        // ever have had any effect — the request never left the sandbox to
+        // begin with. Setting this to `true` tells WebKit to trust the
+        // page's own `window.open()` calls unconditionally, exactly like
+        // real Safari's default toward pages the user navigated to
+        // directly (Safari's popup blocker is a Content Blocker / Settings
+        // toggle, not this WKWebView-level flag).
+        webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+
         let controller = webView.configuration.userContentController
         controller.removeScriptMessageHandler(forName: "oldSafariContextMenu")
         controller.add(context.coordinator, name: "oldSafariContextMenu")
@@ -105,11 +124,11 @@ struct SafariWebView: UIViewRepresentable {
         ) -> WKWebView? {
             guard let url = navigationAction.request.url else { return nil }
 
-            // A target="_blank" link whose scheme WKWebView cannot load
-            // (itms-services:, mailto:, tel:, ...) must never be handed to
-            // `onOpenInNewTab` — that opens a brand new browser tab and
-            // tries to navigate it to the URL, which silently fails and
-            // leaves the tab permanently blank.
+            // A target="_blank" / window.open() link whose scheme WKWebView
+            // cannot load (itms-services:, mailto:, tel:, ...) must never
+            // be handed to `onOpenInNewTab` — that opens a brand new
+            // browser tab and tries to navigate it to the URL, which
+            // silently fails and leaves the tab permanently blank.
             guard let scheme = url.scheme?.lowercased(), Self.isWebHandledScheme(scheme) else {
                 if let scheme = url.scheme?.lowercased(), scheme != "about" {
                     UIApplication.shared.open(url, options: [:], completionHandler: nil)
@@ -134,9 +153,7 @@ struct SafariWebView: UIViewRepresentable {
         /// `navigationAction.shouldPerformDownload` is ONLY exposed through
         /// this overload. WebKit sets it to `true` *before the request is
         /// even sent*, whenever the link carries the HTML `download`
-        /// attribute (`<a href="…" download>`) — the exact pattern used by
-        /// "Download IPA" buttons on sideloading sites such as
-        /// spooferpro.com.
+        /// attribute (`<a href="…" download>`).
         @available(iOS 14.5, *)
         func webView(
             _ webView: WKWebView,
@@ -194,10 +211,6 @@ struct SafariWebView: UIViewRepresentable {
             // Defensive, extension-based override: several .ipa/.apk/.exe
             // hosts are known to serve binary files through misconfigured
             // or generic CDN layers that omit or mislabel Content-Type.
-            // Catching well-known binary extensions here, at the *action*
-            // stage, guarantees the file is routed to the download flow
-            // regardless of whatever Content-Type the response ends up
-            // claiming.
             let neverRenderExtensions: Set<String> = [
                 "ipa", "apk", "exe", "msi", "dmg", "pkg", "deb", "appimage"
             ]
@@ -248,12 +261,6 @@ struct SafariWebView: UIViewRepresentable {
                 || mime.hasPrefix("audio/")
                 || mime.hasPrefix("video/") && isAttachment
 
-            // Second, independent line of defence: `response.mimeType` is
-            // WebKit's own sniffed interpretation and can be wrong or
-            // unreliable behind CDNs/edge caches that omit or mangle
-            // Content-Type. A well-known "never render" extension in the
-            // URL itself is treated as authoritative regardless of
-            // whatever MIME value WebKit reports.
             let neverRenderExtensions: Set<String> = [
                 "ipa", "apk", "exe", "msi", "dmg", "pkg", "deb", "appimage"
             ]
@@ -262,10 +269,6 @@ struct SafariWebView: UIViewRepresentable {
             if isAttachment || notRenderable || downloadishMIME || downloadishExtension {
                 let suggested = filenameHint(response: response, url: requestURL)
 
-                // Modern Safari always confirms with the user before a
-                // download actually starts. We show the classic iOS 6
-                // styled confirmation first, and only call `.download` if
-                // the user taps "Download".
                 presentOldOSAlert(
                     title: requestURL.host,
                     message: "Do you want to download \"\(suggested)\"?",
@@ -614,11 +617,10 @@ struct SafariWebView: UIViewRepresentable {
 /// permessi localizzazione).
 ///
 /// Sfondo della card: gradiente blu piatto con riflesso lucido concentrato
-/// SOLO nel primo ~20% dell'altezza — colori campionati pixel-per-pixel
-/// dalla foto di riferimento (corpo piatto 35,50,91; riflesso 157,159,174).
-/// Questa è l'unica parte mantenuta dall'ultima revisione: struttura dei
-/// pulsanti, margini e raggio degli angoli sono tornati alla versione
-/// precedente su richiesta.
+/// SOLO nel primo ~20% dell'altezza — mantenuto dall'ultima revisione su
+/// richiesta esplicita. Struttura dei pulsanti, margini e raggio degli
+/// angoli sono alla versione precedente (gradiente pulsanti a 4 stop con
+/// salto netto a metà, margini 10pt/gap 8pt, cornerRadius 13).
 final class OldOSJavaScriptAlertController: UIViewController {
 
     enum ButtonKind {
@@ -640,12 +642,9 @@ final class OldOSJavaScriptAlertController: UIViewController {
     private var buttonGradients: [CAGradientLayer] = []
     private var buttonContainers: [UIView] = []
 
-    // Sfondo della card: piatto con riflesso solo in cima (mantenuto).
     private let cardFlat = UIColor(red: 35 / 255, green: 50 / 255, blue: 91 / 255, alpha: 1)
     private let cardGlossTop = UIColor(red: 157 / 255, green: 159 / 255, blue: 174 / 255, alpha: 1)
 
-    // Pulsanti: gradiente a 4 stop con "salto" a metà (versione precedente,
-    // ripristinata).
     private let pillTop = UIColor(red: 173 / 255, green: 181 / 255, blue: 199 / 255, alpha: 1)
     private let pillMidUpper = UIColor(red: 130 / 255, green: 141 / 255, blue: 164 / 255, alpha: 1)
     private let pillMidLower = UIColor(red: 96 / 255, green: 108 / 255, blue: 136 / 255, alpha: 1)
@@ -701,7 +700,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
             shadowContainer.widthAnchor.constraint(equalToConstant: width)
         ])
 
-        // Raggio ripristinato a 13pt (versione precedente).
         card.translatesAutoresizingMaskIntoConstraints = false
         card.backgroundColor = cardFlat
         card.layer.cornerRadius = 13
@@ -716,8 +714,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
             card.bottomAnchor.constraint(equalTo: shadowContainer.bottomAnchor)
         ])
 
-        // Gradiente blu di sfondo MANTENUTO dall'ultima revisione: piatto
-        // con riflesso lucido concentrato solo nel primo 20% dell'altezza.
         cardGradient.colors = [
             cardGlossTop.cgColor,
             cardFlat.cgColor,
@@ -812,8 +808,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
         hDivider.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
         outerStack.addArrangedSubview(hDivider)
 
-        // Margini e gap ripristinati alla versione precedente: 10pt ai
-        // lati, 12pt sotto, 8pt di spaziatura tra i pulsanti.
         let buttonRow = UIStackView()
         buttonRow.axis = .horizontal
         buttonRow.spacing = 8
@@ -833,8 +827,6 @@ final class OldOSJavaScriptAlertController: UIViewController {
         }
     }
 
-    /// Pillole separate con gradiente a 4 stop e "salto" netto a metà —
-    /// versione precedente, ripristinata.
     private func makePillButton(title: String, tag: Int) -> (UIView, CAGradientLayer) {
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
