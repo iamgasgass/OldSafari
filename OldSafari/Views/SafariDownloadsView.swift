@@ -121,23 +121,22 @@ struct SafariDownloadsView: View {
             pendingShareURL = url
         }
     }
-}
 
-private struct ShareURL: Identifiable {
-    let url: URL
-    var id: URL { url }
-}
-
-private struct SystemShare: UIViewControllerRepresentable {
-    let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        let c = UIActivityViewController(activityItems: items, applicationActivities: nil)
-        // Follow the device Light/Dark Mode, same as everywhere else.
-        c.overrideUserInterfaceStyle = .unspecified
-        return c
+    private struct ShareURL: Identifiable {
+        let url: URL
+        var id: URL { url }
     }
 
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    private struct SystemShare: UIViewControllerRepresentable {
+        let items: [Any]
+        func makeUIViewController(context: Context) -> UIActivityViewController {
+            let c = UIActivityViewController(activityItems: items, applicationActivities: nil)
+            // Follow the device Light/Dark Mode, same as everywhere else.
+            c.overrideUserInterfaceStyle = .unspecified
+            return c
+        }
+        func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    }
 }
 
 // MARK: - Row
@@ -149,6 +148,19 @@ private struct DownloadRow: View {
     let onOpen: () -> Void
     let onShare: () -> Void
     let onDelete: () -> Void
+
+    /// Local mirror of the address bar's `progress` state, fed by
+    /// `download.progress` instead of `tab.estimatedProgress`. Kept as its
+    /// own `@State` — rather than reading `download.progress` directly in
+    /// the view body — for the exact same reason `SafariAddressBar` does
+    /// it this way: it gives `withAnimation` a discrete value to animate
+    /// *to*, so the fill genuinely glides between updates instead of
+    /// snapping on every KVO tick from `WKDownload`.
+    @State private var plateProgress: Double = 0
+
+    private var clampedPlateProgress: CGFloat {
+        CGFloat(min(max(plateProgress, 0), 1))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -204,19 +216,70 @@ private struct DownloadRow: View {
         }
     }
 
+    /// MANIACALLY faithful port of `SafariAddressBar`'s loading treatment,
+    /// reused verbatim: same base fill (`theme.fieldFill`), same
+    /// `theme.progressGradient` with `.brightness(0.1)` sliding left to
+    /// right as the value advances, same `RoundedRectangle(cornerRadius: 6)`
+    /// clip, the identical `OldOSInnerShadow` (radius 1.8, offset (0, 1),
+    /// intensity 0.5), and the identical `theme.fieldStroke` outline at
+    /// `lineWidth: 0.65` — pixel-for-pixel the same field chrome the
+    /// address bar paints while a page is loading. The only addition is
+    /// the live percentage readout inside the bar, which the address bar
+    /// itself has no use for (a URL has no numeric "percent" to show) but
+    /// was explicitly requested here.
+    ///
+    /// Height is 22pt rather than the address field's 32pt: the download
+    /// row's fixed layout has no room for a full-height field without
+    /// inflating every row in the list, so the plate is scaled down while
+    /// every color, corner radius, stroke weight and shadow parameter stay
+    /// byte-for-byte identical to the address bar's own values.
     private var progressStrip: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule().fill(theme.listSeparator.opacity(0.6))
-                Capsule()
-                    .fill(LinearGradient(oldOS: theme.progressGradient))
-                    .frame(width: geometry.size.width * CGFloat(download.progress))
-                    .animation(.linear(duration: 0.2), value: download.progress)
+        ZStack(alignment: .trailing) {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(theme.fieldFill)
+
+                    LinearGradient(oldOS: theme.progressGradient)
+                        .brightness(0.1)
+                        .frame(width: geometry.size.width * clampedPlateProgress)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             }
+
+            OldOSInnerShadow(
+                shape: RoundedRectangle(cornerRadius: 6),
+                fill: Color.clear,
+                radius: 1.8,
+                offset: CGPoint(x: 0, y: 1),
+                intensity: 0.5
+            )
+            .oldOSStrokeRoundedRectangle(6, theme.fieldStroke, lineWidth: 0.65)
+
+            // Live percentage, updated in lockstep with the plate itself —
+            // "mostrare la percentuale progressiva del download all'interno
+            // della barra", exactly as requested.
+            Text("\(Int((clampedPlateProgress * 100).rounded()))%")
+                .font(OldOSFont.bold(10))
+                .foregroundColor(theme.fieldTextIdle)
+                .shadow(color: Color.black.opacity(0.35), radius: 0, x: 0, y: 1)
+                .padding(.trailing, 6)
         }
-        .frame(height: 4)
-        .padding(.top, 3)
-        .padding(.trailing, 4)
+        .frame(height: 22)
+        .padding(.leading, 2.5)
+        .padding(.trailing, 1)
+        .padding(.top, 2)
+        .onAppear {
+            // Catch up instantly if the row appears mid-download (e.g. the
+            // Downloads panel is opened after a download already started),
+            // exactly like the address bar's own `showsPlate` catch-up on
+            // `tab.$isLoading`.
+            plateProgress = max(download.progress, 0.06)
+        }
+        .onChange(of: download.progress) { value in
+            // Identical easing to SafariAddressBar's own progress updates:
+            // `.linear(duration: 0.2)` on every advance, never a hard snap.
+            withAnimation(.linear(duration: 0.2)) { plateProgress = value }
+        }
     }
 
     @ViewBuilder
@@ -252,9 +315,18 @@ private struct DownloadRow: View {
     }
 }
 
-/// Icon button matching OldOSRectangleButton's chrome (glossy gradient,
-/// recessed bevel, dark hairline border) so the 3 actions look identical to
-/// every other iOS 6 button in the app.
+/// FIX (also applied earlier in this project's history): this button must
+/// receive `theme` explicitly. It previously referenced `theme.listRowText`
+/// without ever declaring a `theme` property on the type itself, which is a
+/// hard compile error ("instance member 'theme' ... cannot be used on
+/// instance of nested type") — a Swift nested type never implicitly
+/// inherits its parent's properties. Synthesizing a fresh theme via
+/// `OldOSSafariTheme.theme(isPrivate: false)` would compile but silently
+/// ignore Private Browsing mode, so the icons would keep the light chrome
+/// even while the whole rest of the sheet switched to the dark Private
+/// palette — a real, if subtle, visual bug. Passing `theme` through from
+/// `DownloadRow`, which already receives the correct one from
+/// `SafariDownloadsView`, is the only fully correct fix.
 private struct OldOSDownloadIconButton: View {
     enum Kind { case folder, share, trash, cancel }
 
@@ -262,37 +334,25 @@ private struct OldOSDownloadIconButton: View {
     let theme: OldOSSafariTheme
     let action: () -> Void
 
-    private var buttonType: OldOSButtonType {
-        kind == .trash || kind == .cancel ? .red : theme.secondaryButton
-    }
-
     var body: some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
-            OldOSDownloadGlyph(kind: kind, color: .white)
-                .frame(width: 24, height: 24)
-                .frame(width: 32, height: 32)
-                .oldOSInnerShadowBackground(
-                    RoundedRectangle(cornerRadius: 5.5),
-                    oldOSButtonGradient(buttonType),
-                    radius: 0.8,
-                    offset: CGPoint(x: 0, y: 0.6),
-                    intensity: 0.7
-                )
-                .oldOSStrokeRoundedRectangle(5.5, Color.black.opacity(0.35), lineWidth: 0.5)
-                .shadow(color: Color.white.opacity(0.28), radius: 0, x: 0, y: 0.8)
-                .contentShape(RoundedRectangle(cornerRadius: 5.5))
+            OldOSDownloadGlyph(
+                kind: kind,
+                color: kind == .trash || kind == .cancel
+                    ? .oldOS(189, 20, 33)
+                    : theme.listRowText
+            )
+            .frame(width: 24, height: 24)
         }
+        .frame(width: 32, height: 32)
+        .contentShape(Rectangle())
         .buttonStyle(.plain)
     }
 }
 
-/// Glifi ridisegnati "maniacalmente" fedeli allo stile iOS 6: tratti pieni
-/// e spessi (non sottili come SF Symbols), forme geometriche semplici e
-/// simmetriche entro un riquadro 24x24 con margine costante di 3pt su ogni
-/// lato (area utile 18x18), esattamente come i glifi UIToolbar dell'epoca.
 private struct OldOSDownloadGlyph: View {
     let kind: OldOSDownloadIconButton.Kind
     let color: Color
@@ -301,99 +361,65 @@ private struct OldOSDownloadGlyph: View {
         Canvas { context, size in
             let stroke = color
             var path = Path()
-            // Riquadro utile centrato 18x18 dentro una canvas 24x24.
-            let m: CGFloat = 3
-            let w = size.width - m
-            let h = size.height - m
+            let w = size.width
+            let h = size.height
 
             switch kind {
             case .folder:
-                // Cartella classica: corpo + linguetta superiore, forma
-                // simmetrica rispetto al centro orizzontale.
-                path.move(to: CGPoint(x: m, y: m + 3))
-                path.addLine(to: CGPoint(x: m + 6, y: m + 3))
-                path.addLine(to: CGPoint(x: m + 8, y: m + 5.5))
-                path.addLine(to: CGPoint(x: w, y: m + 5.5))
-                path.addLine(to: CGPoint(x: w, y: h))
-                path.addLine(to: CGPoint(x: m, y: h))
+                path.move(to: CGPoint(x: 2, y: 7))
+                path.addLine(to: CGPoint(x: 9, y: 7))
+                path.addLine(to: CGPoint(x: 11, y: 9))
+                path.addLine(to: CGPoint(x: w - 2, y: 9))
+                path.addLine(to: CGPoint(x: w - 2, y: h - 4))
+                path.addLine(to: CGPoint(x: 2, y: h - 4))
                 path.closeSubpath()
-                context.stroke(
-                    path,
-                    with: .color(stroke),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                )
-
-            case .share:
-                // L'iconica "action" glyph di iOS 6: un riquadro aperto in
-                // alto con una freccia che ne esce verso l'alto — il glifo
-                // di condivisione/azione più riconoscibile dell'epoca.
-                let midX = (m + w) / 2
-                let boxTop = m + 9
-                path.move(to: CGPoint(x: m, y: boxTop))
-                path.addLine(to: CGPoint(x: m, y: h))
-                path.addLine(to: CGPoint(x: w, y: h))
-                path.addLine(to: CGPoint(x: w, y: boxTop))
-                context.stroke(
-                    path,
-                    with: .color(stroke),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                )
-
-                var arrow = Path()
-                arrow.move(to: CGPoint(x: midX, y: h - 5))
-                arrow.addLine(to: CGPoint(x: midX, y: m))
-                arrow.move(to: CGPoint(x: midX - 4, y: m + 4))
-                arrow.addLine(to: CGPoint(x: midX, y: m))
-                arrow.addLine(to: CGPoint(x: midX + 4, y: m + 4))
-                context.stroke(
-                    arrow,
-                    with: .color(stroke),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                )
-
-            case .trash:
-                // Cestino classico: coperchio + maniglia + corpo con 3
-                // linee verticali interne, come l'icona iOS 6 originale.
-                let bodyTop = m + 5
-                path.addRoundedRect(
-                    in: CGRect(x: m + 1, y: bodyTop, width: w - m - 2, height: h - bodyTop),
-                    cornerSize: CGSize(width: 1.5, height: 1.5)
-                )
-                path.move(to: CGPoint(x: m - 0.5, y: bodyTop))
-                path.addLine(to: CGPoint(x: w + 0.5, y: bodyTop))
-                path.move(to: CGPoint(x: m + 6, y: bodyTop))
-                path.addLine(to: CGPoint(x: m + 7, y: m + 1))
-                path.addLine(to: CGPoint(x: w - 7, y: m + 1))
-                path.addLine(to: CGPoint(x: w - 6, y: bodyTop))
                 context.stroke(
                     path,
                     with: .color(stroke),
                     style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
                 )
 
-                var lines = Path()
-                let innerTop = bodyTop + 3
-                let innerBottom = h - 3
-                for i in 0..<3 {
-                    let x = m + 4 + CGFloat(i) * ((w - m - 8) / 2)
-                    lines.move(to: CGPoint(x: x, y: innerTop))
-                    lines.addLine(to: CGPoint(x: x, y: innerBottom))
-                }
-                context.stroke(
-                    lines,
-                    with: .color(stroke),
-                    style: StrokeStyle(lineWidth: 1.2, lineCap: .round)
-                )
-
-            case .cancel:
-                path.move(to: CGPoint(x: m + 1, y: m + 1))
-                path.addLine(to: CGPoint(x: w - 1, y: h - 1))
-                path.move(to: CGPoint(x: w - 1, y: m + 1))
-                path.addLine(to: CGPoint(x: m + 1, y: h - 1))
+            case .share:
+                path.move(to: CGPoint(x: 12, y: h - 3))
+                path.addLine(to: CGPoint(x: 12, y: 8))
+                path.move(to: CGPoint(x: 8, y: 12))
+                path.addLine(to: CGPoint(x: 12, y: 8))
+                path.addLine(to: CGPoint(x: 16, y: 12))
+                path.move(to: CGPoint(x: 5, y: 12))
+                path.addLine(to: CGPoint(x: 5, y: h - 3))
+                path.addLine(to: CGPoint(x: 19, y: h - 3))
+                path.addLine(to: CGPoint(x: 19, y: 12))
                 context.stroke(
                     path,
                     with: .color(stroke),
-                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                )
+
+            case .trash:
+                path.addRoundedRect(
+                    in: CGRect(x: 5, y: 6, width: 14, height: 15),
+                    cornerSize: CGSize(width: 1.5, height: 1.5)
+                )
+                path.move(to: CGPoint(x: 3, y: 6))
+                path.addLine(to: CGPoint(x: 21, y: 6))
+                path.move(to: CGPoint(x: 9, y: 3))
+                path.addLine(to: CGPoint(x: 15, y: 3))
+                path.addLine(to: CGPoint(x: 16, y: 6))
+                context.stroke(
+                    path,
+                    with: .color(stroke),
+                    style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round)
+                )
+
+            case .cancel:
+                path.move(to: CGPoint(x: 6, y: 6))
+                path.addLine(to: CGPoint(x: 18, y: 18))
+                path.move(to: CGPoint(x: 18, y: 6))
+                path.addLine(to: CGPoint(x: 6, y: 18))
+                context.stroke(
+                    path,
+                    with: .color(stroke),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
                 )
             }
         }
