@@ -105,13 +105,11 @@ struct SafariWebView: UIViewRepresentable {
         ) -> WKWebView? {
             guard let url = navigationAction.request.url else { return nil }
 
-            // FIX: a target="_blank" link whose scheme WKWebView cannot load
+            // A target="_blank" link whose scheme WKWebView cannot load
             // (itms-services:, mailto:, tel:, ...) must never be handed to
             // `onOpenInNewTab` — that opens a brand new browser tab and
             // tries to navigate it to the URL, which silently fails and
-            // leaves the tab permanently blank. IPA "download"/"install"
-            // buttons on sideloading sites trigger exactly this: an
-            // `itms-services://` link with `target="_blank"`.
+            // leaves the tab permanently blank.
             guard let scheme = url.scheme?.lowercased(), Self.isWebHandledScheme(scheme) else {
                 if let scheme = url.scheme?.lowercased(), scheme != "about" {
                     UIApplication.shared.open(url, options: [:], completionHandler: nil)
@@ -119,9 +117,6 @@ struct SafariWebView: UIViewRepresentable {
                 return nil
             }
 
-            // target="_blank" / window.open on a real web URL: hand the
-            // link to a new page when the browser chrome offers one,
-            // otherwise keep it in this page.
             if navigationAction.targetFrame == nil {
                 if let onOpenInNewTab {
                     onOpenInNewTab(url)
@@ -132,9 +127,45 @@ struct SafariWebView: UIViewRepresentable {
             return nil
         }
 
+        /// Modern (iOS 14.5+) overload of the navigation-action decision
+        /// point. WHEN THIS IS IMPLEMENTED, WebKit calls ONLY this version
+        /// and never the legacy 3-argument one.
+        ///
+        /// `navigationAction.shouldPerformDownload` is ONLY exposed through
+        /// this overload. WebKit sets it to `true` *before the request is
+        /// even sent*, whenever the link carries the HTML `download`
+        /// attribute (`<a href="…" download>`) — the exact pattern used by
+        /// "Download IPA" buttons on sideloading sites such as
+        /// spooferpro.com.
+        @available(iOS 14.5, *)
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
+            preferences: WKWebpagePreferences,
+            decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+        ) {
+            if navigationAction.shouldPerformDownload {
+                decisionHandler(.download, preferences)
+                return
+            }
+
+            resolveActionPolicy(for: navigationAction) { policy in
+                decisionHandler(policy, preferences)
+            }
+        }
+
+        /// Legacy overload, kept for source completeness. Delegates to the
+        /// exact same routing logic so the two paths can never drift apart.
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            resolveActionPolicy(for: navigationAction, decisionHandler: decisionHandler)
+        }
+
+        private func resolveActionPolicy(
+            for navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
             guard
@@ -160,17 +191,28 @@ struct SafariWebView: UIViewRepresentable {
                 return
             }
 
+            // Defensive, extension-based override: several .ipa/.apk/.exe
+            // hosts are known to serve binary files through misconfigured
+            // or generic CDN layers that omit or mislabel Content-Type.
+            // Catching well-known binary extensions here, at the *action*
+            // stage, guarantees the file is routed to the download flow
+            // regardless of whatever Content-Type the response ends up
+            // claiming.
+            let neverRenderExtensions: Set<String> = [
+                "ipa", "apk", "exe", "msi", "dmg", "pkg", "deb", "appimage"
+            ]
+            if neverRenderExtensions.contains(url.pathExtension.lowercased()) {
+                decisionHandler(.download)
+                return
+            }
+
             decisionHandler(.allow)
         }
 
         /// Schemes `WKWebView` can actually load and render. Anything else
         /// (`itms-services:`, `mailto:`, `tel:`, `sms:`, custom app schemes,
         /// ...) must be handed to `UIApplication.shared.open` instead of
-        /// being navigated. Applied identically in both
-        /// `decidePolicyFor(navigationAction:)` and `createWebViewWith` so a
-        /// target="_blank" `itms-services://` link (the IPA install
-        /// mechanism used by sideloading sites) never opens a permanently
-        /// blank new tab again.
+        /// being navigated.
         private static func isWebHandledScheme(_ scheme: String) -> Bool {
             ["http", "https", "about", "blob", "data", "file"].contains(scheme)
         }
@@ -206,7 +248,18 @@ struct SafariWebView: UIViewRepresentable {
                 || mime.hasPrefix("audio/")
                 || mime.hasPrefix("video/") && isAttachment
 
-            if isAttachment || notRenderable || downloadishMIME {
+            // Second, independent line of defence: `response.mimeType` is
+            // WebKit's own sniffed interpretation and can be wrong or
+            // unreliable behind CDNs/edge caches that omit or mangle
+            // Content-Type. A well-known "never render" extension in the
+            // URL itself is treated as authoritative regardless of
+            // whatever MIME value WebKit reports.
+            let neverRenderExtensions: Set<String> = [
+                "ipa", "apk", "exe", "msi", "dmg", "pkg", "deb", "appimage"
+            ]
+            let downloadishExtension = neverRenderExtensions.contains(requestURL.pathExtension.lowercased())
+
+            if isAttachment || notRenderable || downloadishMIME || downloadishExtension {
                 let suggested = filenameHint(response: response, url: requestURL)
 
                 // Modern Safari always confirms with the user before a
@@ -507,21 +560,21 @@ struct SafariWebView: UIViewRepresentable {
                     actions.append(contentsOf: [open])
                     if self?.onOpenInNewTab != nil { actions.append(newTab) }
                     actions.append(contentsOf: [copy, download])
-
-                    let share = UIAction(
-                        title: "Share…",
-                        image: UIImage(systemName: "square.and.arrow.up")
-                    ) { _ in
-                        let controller = UIActivityViewController(
-                            activityItems: [linkURL],
-                            applicationActivities: nil
-                        )
-                        controller.overrideUserInterfaceStyle = .unspecified
-                        controller.popoverPresentationController?.sourceView = webView
-                        webView.window?.rootViewController?.present(controller, animated: true)
-                    }
-                    actions.append(share)
                 }
+
+                let share = UIAction(
+                    title: "Share…",
+                    image: UIImage(systemName: "square.and.arrow.up")
+                ) { _ in
+                    let controller = UIActivityViewController(
+                        activityItems: [linkURL],
+                        applicationActivities: nil
+                    )
+                    controller.overrideUserInterfaceStyle = .unspecified
+                    controller.popoverPresentationController?.sourceView = webView
+                    webView.window?.rootViewController?.present(controller, animated: true)
+                }
+                actions.append(share)
 
                 return UIMenu(title: imageURL != nil ? "Image" : (linkURL?.absoluteString ?? ""), children: actions)
             }
@@ -539,7 +592,6 @@ struct SafariWebView: UIViewRepresentable {
                 cachePolicy: .reloadIgnoringLocalCacheData,
                 timeoutInterval: 30
             )
-
             URLSession.shared.dataTask(with: request) { data, response, error in
                 guard
                     error == nil,
@@ -549,41 +601,24 @@ struct SafariWebView: UIViewRepresentable {
 
                 PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
                     guard status == .authorized || status == .limited else { return }
-
                     PHPhotoLibrary.shared().performChanges {
                         PHAssetChangeRequest.creationRequestForAsset(from: image)
                     } completionHandler: { _, _ in }
                 }
             }.resume()
         }
-
     }
 }
 
-/// Replica fedele dell'alert di sistema iOS 6 (rif. foto "Data Isolation" /
-/// permessi localizzazione), ricostruita da un'analisi pixel-per-pixel della
-/// foto di riferimento (scala @2x, iPhone classico 320x480pt):
+/// Replica dell'alert di sistema iOS 6 (rif. foto "Data Isolation" /
+/// permessi localizzazione).
 ///
-/// - La card NON è un gradiente continuo dall'alto in basso: il corpo è un
-///   colore SOLIDO piatto (33,48,89)/(35,50,91), con un riflesso lucido
-///   concentrato SOLO nel primo ~20% dell'altezza (da 157,159,174 che sfuma
-///   fino al colore piatto). Un'implementazione precedente usava un
-///   gradiente a 4 stop su tutta l'altezza, che non corrisponde alla foto.
-/// - I pulsanti hanno un gradiente continuo (non un salto netto a metà):
-///   dal chiaro (208,214,230) in cima, che scende fino al tono medio-scuro
-///   (85,96,126) intorno al 51% dell'altezza, poi risale leggermente fino a
-///   (103,112,141) sul fondo — misurato campionando l'interno dei pulsanti
-///   riga per riga.
-/// - Margini della riga pulsanti: 6pt dai lati della card, 10pt di gap tra i
-///   due pulsanti — misurati e convertiti dalla scala @2x della foto
-///   (544px larghezza card interna / 2 = 272pt, quasi identico ai 270pt
-///   della larghezza usata in questa implementazione: convalida diretta).
-/// - Raggio degli angoli ~10pt (misurato dalla curvatura dell'angolo in
-///   alto a sinistra nella foto).
-///
-/// Ogni superficie colorata ha un `backgroundColor` solido impostato PRIMA
-/// del CAGradientLayer decorativo, così la card non può mai apparire
-/// trasparente indipendentemente dal timing di Auto Layout.
+/// Sfondo della card: gradiente blu piatto con riflesso lucido concentrato
+/// SOLO nel primo ~20% dell'altezza — colori campionati pixel-per-pixel
+/// dalla foto di riferimento (corpo piatto 35,50,91; riflesso 157,159,174).
+/// Questa è l'unica parte mantenuta dall'ultima revisione: struttura dei
+/// pulsanti, margini e raggio degli angoli sono tornati alla versione
+/// precedente su richiesta.
 final class OldOSJavaScriptAlertController: UIViewController {
 
     enum ButtonKind {
@@ -605,13 +640,16 @@ final class OldOSJavaScriptAlertController: UIViewController {
     private var buttonGradients: [CAGradientLayer] = []
     private var buttonContainers: [UIView] = []
 
-    // Colori campionati pixel-per-pixel dalla foto di riferimento.
+    // Sfondo della card: piatto con riflesso solo in cima (mantenuto).
     private let cardFlat = UIColor(red: 35 / 255, green: 50 / 255, blue: 91 / 255, alpha: 1)
     private let cardGlossTop = UIColor(red: 157 / 255, green: 159 / 255, blue: 174 / 255, alpha: 1)
 
-    private let pillTop = UIColor(red: 208 / 255, green: 214 / 255, blue: 230 / 255, alpha: 1)
-    private let pillMid = UIColor(red: 85 / 255, green: 96 / 255, blue: 126 / 255, alpha: 1)
-    private let pillBottom = UIColor(red: 103 / 255, green: 112 / 255, blue: 141 / 255, alpha: 1)
+    // Pulsanti: gradiente a 4 stop con "salto" a metà (versione precedente,
+    // ripristinata).
+    private let pillTop = UIColor(red: 173 / 255, green: 181 / 255, blue: 199 / 255, alpha: 1)
+    private let pillMidUpper = UIColor(red: 130 / 255, green: 141 / 255, blue: 164 / 255, alpha: 1)
+    private let pillMidLower = UIColor(red: 96 / 255, green: 108 / 255, blue: 136 / 255, alpha: 1)
+    private let pillBottom = UIColor(red: 72 / 255, green: 85 / 255, blue: 116 / 255, alpha: 1)
 
     init(
         title: String?,
@@ -663,10 +701,10 @@ final class OldOSJavaScriptAlertController: UIViewController {
             shadowContainer.widthAnchor.constraint(equalToConstant: width)
         ])
 
-        // Raggio ~10pt, misurato dalla curvatura dell'angolo nella foto.
+        // Raggio ripristinato a 13pt (versione precedente).
         card.translatesAutoresizingMaskIntoConstraints = false
         card.backgroundColor = cardFlat
-        card.layer.cornerRadius = 10
+        card.layer.cornerRadius = 13
         card.layer.masksToBounds = true
         card.layer.borderWidth = 1
         card.layer.borderColor = UIColor(white: 0.05, alpha: 0.9).cgColor
@@ -678,10 +716,8 @@ final class OldOSJavaScriptAlertController: UIViewController {
             card.bottomAnchor.constraint(equalTo: shadowContainer.bottomAnchor)
         ])
 
-        // Gradiente a 3 stop dove i due ultimi colori sono identici: crea
-        // esattamente l'effetto "riflesso che sfuma nel primo 20%, poi
-        // colore piatto" misurato nella foto — non un gradiente continuo
-        // su tutta l'altezza.
+        // Gradiente blu di sfondo MANTENUTO dall'ultima revisione: piatto
+        // con riflesso lucido concentrato solo nel primo 20% dell'altezza.
         cardGradient.colors = [
             cardGlossTop.cgColor,
             cardFlat.cgColor,
@@ -770,27 +806,24 @@ final class OldOSJavaScriptAlertController: UIViewController {
             input = field
         }
 
-        // Divisorio sottile — nella foto è immediatamente sopra il bordo
-        // superiore dei pulsanti, senza spazio aggiuntivo.
         let hDivider = UIView()
         hDivider.backgroundColor = UIColor.black.withAlphaComponent(0.5)
         hDivider.translatesAutoresizingMaskIntoConstraints = false
         hDivider.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
         outerStack.addArrangedSubview(hDivider)
 
-        // Margini misurati: 6pt dai lati della card, 10pt di gap tra i
-        // pulsanti, nessun margine extra sopra (il pulsante inizia subito
-        // sotto il divisorio), 6pt sotto prima dell'angolo arrotondato.
+        // Margini e gap ripristinati alla versione precedente: 10pt ai
+        // lati, 12pt sotto, 8pt di spaziatura tra i pulsanti.
         let buttonRow = UIStackView()
         buttonRow.axis = .horizontal
-        buttonRow.spacing = 10
+        buttonRow.spacing = 8
         buttonRow.distribution = .fillEqually
         buttonRow.backgroundColor = .clear
         buttonRow.isLayoutMarginsRelativeArrangement = true
-        buttonRow.layoutMargins = UIEdgeInsets(top: 0, left: 6, bottom: 6, right: 6)
+        buttonRow.layoutMargins = UIEdgeInsets(top: 10, left: 10, bottom: 12, right: 10)
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
         outerStack.addArrangedSubview(buttonRow)
-        buttonRow.heightAnchor.constraint(equalToConstant: 46).isActive = true
+        buttonRow.heightAnchor.constraint(equalToConstant: 66).isActive = true
 
         for (index, item) in buttons.enumerated() {
             let (pill, gradient) = makePillButton(title: item.0, tag: index)
@@ -800,15 +833,13 @@ final class OldOSJavaScriptAlertController: UIViewController {
         }
     }
 
-    /// Pillole separate con gradiente a 3 stop calibrato sui pixel reali
-    /// della foto: chiaro in cima, scuro a metà, leggermente più chiaro sul
-    /// fondo — non un salto netto a metà come in un'implementazione
-    /// precedente.
+    /// Pillole separate con gradiente a 4 stop e "salto" netto a metà —
+    /// versione precedente, ripristinata.
     private func makePillButton(title: String, tag: Int) -> (UIView, CAGradientLayer) {
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        container.backgroundColor = pillMid
-        container.layer.cornerRadius = 7
+        container.backgroundColor = pillBottom
+        container.layer.cornerRadius = 8
         container.layer.masksToBounds = true
         container.layer.borderWidth = 1 / UIScreen.main.scale
         container.layer.borderColor = UIColor(white: 0.02, alpha: 0.85).cgColor
@@ -816,10 +847,11 @@ final class OldOSJavaScriptAlertController: UIViewController {
         let gradient = CAGradientLayer()
         gradient.colors = [
             pillTop.cgColor,
-            pillMid.cgColor,
+            pillMidUpper.cgColor,
+            pillMidLower.cgColor,
             pillBottom.cgColor
         ]
-        gradient.locations = [0, 0.51, 1.0]
+        gradient.locations = [0, 0.42, 0.43, 1.0]
         gradient.frame = CGRect(x: 0, y: 0, width: 120, height: 44)
         container.layer.insertSublayer(gradient, at: 0)
 
@@ -869,7 +901,7 @@ final class OldOSJavaScriptAlertController: UIViewController {
         rimLayer?.frame = card.bounds
         rimLayer?.path = UIBezierPath(
             roundedRect: card.bounds.insetBy(dx: 1.5, dy: 1.5),
-            cornerRadius: 8.5
+            cornerRadius: 11.5
         ).cgPath
 
         for (index, container) in buttonContainers.enumerated() {
