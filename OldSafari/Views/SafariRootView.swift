@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Full-screen Safari shell.  The chrome geometry is OldOS' (60pt title bar,
+/// Full-screen Safari shell. The chrome geometry is OldOS' (60pt title bar,
 /// 45pt toolbar) but it is laid out against the real device safe areas so the
 /// browser stays edge to edge instead of being letterboxed into a 320x480 frame.
 struct SafariRootView: View {
@@ -236,7 +236,7 @@ private struct SafariSelectedTabView: View {
                     SafariStartPageView(store: store, tab: tab, theme: theme)
                 } else {
                     SafariWebView(tab: tab) { url in
-                        store.addTab(url: url)
+                        openInForegroundNewTab(url)
                     }
                 }
 
@@ -288,6 +288,60 @@ private struct SafariSelectedTabView: View {
         }
     }
 
+    /// Called by `SafariWebView` whenever the page opens a link in a new
+    /// page — `target="_blank"`, `window.open()`, or a long-press "Open in
+    /// New Page" — which is exactly the path a "Download IPA" button on a
+    /// site like spooferpro.com takes.
+    ///
+    /// MANIACAL FIX: `store.addTab(url:)` already marks the new tab as
+    /// `selectedID`, so `store.selected` (read by `SafariRootView`) flips to
+    /// it immediately. But `store.selected` becoming the new tab is not the
+    /// same as the USER actually *seeing* it: if any overlay happens to be
+    /// on screen at that exact moment — the Tabs grid, the Library sheet,
+    /// the Share sheet, the "New Page / Close Page" action sheet, the
+    /// Downloads panel, or even just a lingering Back/Forward history
+    /// preview — that overlay sits at a higher `zIndex` than `browser` and
+    /// visually hides the freshly opened page behind it. The tab switch
+    /// happened correctly under the hood, but the user perceives nothing
+    /// changing, which reads exactly like "the new tab doesn't show up".
+    ///
+    /// This closure now:
+    /// 1. Hops to the main thread defensively — `WKUIDelegate.
+    ///    createWebViewWith` is documented to call back on the main
+    ///    thread, but SwiftUI's `@Published`/`@State` mutations are only
+    ///    guaranteed safe there, so this removes any doubt entirely rather
+    ///    than trusting an external framework's threading contract.
+    /// 2. Dismisses every single overlay that could possibly be covering
+    ///    the browser, in one synchronized animation.
+    /// 3. Creates the tab and explicitly re-asserts the selection with the
+    ///    same animation, so the new page's WKWebView crossfades into view
+    ///    in the exact same visual beat as the overlays clearing — nothing
+    ///    "just appears" a frame later, and nothing requires the user to
+    ///    manually open the tab switcher to notice a new page arrived.
+    private func openInForegroundNewTab(_ url: URL) {
+        DispatchQueue.main.async {
+            withAnimation(.linear(duration: 0.22)) {
+                showTabs = false
+                showLibrary = false
+                showShare = false
+                showPageActions = false
+                downloads.showDownloadsPanel = false
+                historyRequest = nil
+                editingField = nil
+            }
+
+            let newTab = store.addTab(url: url)
+
+            withAnimation(.linear(duration: 0.22)) {
+                store.select(newTab)
+            }
+
+            oldOSHideKeyboard()
+        }
+    }
+
+    // MARK: Chrome
+
     private var chrome: some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: topInset)
@@ -316,7 +370,7 @@ private struct SafariSelectedTabView: View {
     }
 
     /// OldOS URL heuristics: honour an explicit scheme, promote `www.` and
-    /// otherwise assume https.  Anything that clearly is not a host is handed
+    /// otherwise assume https. Anything that clearly is not a host is handed
     /// to Google, the way iOS 6's unified behaviour ended up working.
     private func navigate(_ raw: String) {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
