@@ -235,9 +235,43 @@ private struct SafariSelectedTabView: View {
                 if tab.url == nil {
                     SafariStartPageView(store: store, tab: tab, theme: theme)
                 } else {
+                    // MANIACAL FIX — the actual final root cause of "Download
+                    // IPA opens a blank new tab":
+                    //
+                    // `UIViewRepresentable.makeUIView` is invoked by SwiftUI
+                    // ONCE per structural position in the view tree — NOT
+                    // every time the `tab` property changes to a different
+                    // `SafariTab` instance at this same call site. When
+                    // `store.addTab(url:)` creates a brand new tab (with its
+                    // own, separate `WKWebView`) and selects it, this
+                    // `SafariWebView(tab: tab)` call stays in exactly the
+                    // same place in the tree, so SwiftUI only invokes
+                    // `updateUIView` — never `makeUIView` again. And
+                    // `updateUIView` receives the PREVIOUSLY mounted
+                    // `WKWebView` (the old tab's), not the new tab's; it
+                    // never calls `tab.activateIfNeeded()` and never
+                    // re-attaches `navigationDelegate`/`uiDelegate`. The new
+                    // tab's own `WKWebView` — the one actually holding the
+                    // pending `.ipa` URL — is therefore NEVER mounted and
+                    // NEVER told to load anything, no matter how correct
+                    // the delegate logic inside `SafariWebView.swift` is.
+                    // Every previous fix to `decidePolicyFor`,
+                    // `shouldPerformDownload`, or delegate-attachment order
+                    // was necessary but could never have been sufficient on
+                    // its own, because this call was never even reaching
+                    // `makeUIView` for the new tab in the first place.
+                    //
+                    // `.id(tab.id)` forces SwiftUI to treat a change of
+                    // `tab` as a genuinely new view identity, tearing down
+                    // the old `UIViewRepresentable` wrapper (and its
+                    // `Coordinator`) and calling `makeUIView` fresh for the
+                    // new tab — which then correctly picks up
+                    // `tab.webView`, attaches the delegate, and calls
+                    // `activateIfNeeded()`, exactly as designed.
                     SafariWebView(tab: tab) { url in
                         openInForegroundNewTab(url)
                     }
+                    .id(tab.id)
                 }
 
                 if editingField != nil {
@@ -293,31 +327,13 @@ private struct SafariSelectedTabView: View {
     /// New Page" — which is exactly the path a "Download IPA" button on a
     /// site like spooferpro.com takes.
     ///
-    /// MANIACAL FIX: `store.addTab(url:)` already marks the new tab as
-    /// `selectedID`, so `store.selected` (read by `SafariRootView`) flips to
-    /// it immediately. But `store.selected` becoming the new tab is not the
-    /// same as the USER actually *seeing* it: if any overlay happens to be
-    /// on screen at that exact moment — the Tabs grid, the Library sheet,
-    /// the Share sheet, the "New Page / Close Page" action sheet, the
-    /// Downloads panel, or even just a lingering Back/Forward history
-    /// preview — that overlay sits at a higher `zIndex` than `browser` and
-    /// visually hides the freshly opened page behind it. The tab switch
-    /// happened correctly under the hood, but the user perceives nothing
-    /// changing, which reads exactly like "the new tab doesn't show up".
-    ///
-    /// This closure now:
-    /// 1. Hops to the main thread defensively — `WKUIDelegate.
-    ///    createWebViewWith` is documented to call back on the main
-    ///    thread, but SwiftUI's `@Published`/`@State` mutations are only
-    ///    guaranteed safe there, so this removes any doubt entirely rather
-    ///    than trusting an external framework's threading contract.
-    /// 2. Dismisses every single overlay that could possibly be covering
-    ///    the browser, in one synchronized animation.
-    /// 3. Creates the tab and explicitly re-asserts the selection with the
-    ///    same animation, so the new page's WKWebView crossfades into view
-    ///    in the exact same visual beat as the overlays clearing — nothing
-    ///    "just appears" a frame later, and nothing requires the user to
-    ///    manually open the tab switcher to notice a new page arrived.
+    /// This still guarantees the new tab becomes visible immediately, with
+    /// every overlay that could hide it dismissed in the same animation —
+    /// but the fix that ACTUALLY makes the new tab's WKWebView mount and
+    /// load in the first place is the `.id(tab.id)` on `SafariWebView`
+    /// above; without it, this selection change would be correct in the
+    /// data model but invisible on screen, because SwiftUI would never
+    /// call `makeUIView` again for the new tab's own web view.
     private func openInForegroundNewTab(_ url: URL) {
         DispatchQueue.main.async {
             withAnimation(.linear(duration: 0.22)) {
