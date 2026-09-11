@@ -12,28 +12,21 @@ struct SafariWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let webView = tab.webView
-        tab.activateIfNeeded()
+
+        // FIX: delegates MUST be attached before `activateIfNeeded()` can
+        // ever call `webView.load()`. The previous order called
+        // `activateIfNeeded()` first, so the tab's very first navigation
+        // — whether restored from a saved session or opened fresh — could
+        // start before `navigationDelegate`/`uiDelegate` existed, silently
+        // skipping every download/scheme/MIME check below for that one
+        // request. Paired with the matching fix in `SafariTab.init`
+        // (which now always defers the initial load to
+        // `activateIfNeeded()` instead of loading synchronously inside
+        // the initializer), this guarantees a delegate is in place before
+        // any request this browser makes ever leaves the device.
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-
-        // FIX for "Download IPA opens a blank new tab and nothing happens":
-        // WKWebView's secure default is `javaScriptCanOpenWindowsAutomatically
-        // = false`, which makes WebKit silently BLOCK any `window.open()`
-        // call that it cannot tie directly and synchronously to the user's
-        // tap. Sites like spooferpro.com's install page fetch an AltStore-
-        // style JSON manifest (containing the real "downloadURL") via
-        // JavaScript first, and only call `window.open()` once that async
-        // fetch resolves — by then WebKit no longer considers it a trusted
-        // user gesture and blocks the popup outright. When WebKit blocks a
-        // popup this way, `createWebViewWith` is never even invoked, so no
-        // amount of fixing `decidePolicyFor` inside this Coordinator could
-        // ever have had any effect — the request never left the sandbox to
-        // begin with. Setting this to `true` tells WebKit to trust the
-        // page's own `window.open()` calls unconditionally, exactly like
-        // real Safari's default toward pages the user navigated to
-        // directly (Safari's popup blocker is a Content Blocker / Settings
-        // toggle, not this WKWebView-level flag).
-        webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        tab.activateIfNeeded()
 
         let controller = webView.configuration.userContentController
         controller.removeScriptMessageHandler(forName: "oldSafariContextMenu")
@@ -124,11 +117,6 @@ struct SafariWebView: UIViewRepresentable {
         ) -> WKWebView? {
             guard let url = navigationAction.request.url else { return nil }
 
-            // A target="_blank" / window.open() link whose scheme WKWebView
-            // cannot load (itms-services:, mailto:, tel:, ...) must never
-            // be handed to `onOpenInNewTab` — that opens a brand new
-            // browser tab and tries to navigate it to the URL, which
-            // silently fails and leaves the tab permanently blank.
             guard let scheme = url.scheme?.lowercased(), Self.isWebHandledScheme(scheme) else {
                 if let scheme = url.scheme?.lowercased(), scheme != "about" {
                     UIApplication.shared.open(url, options: [:], completionHandler: nil)
@@ -146,14 +134,6 @@ struct SafariWebView: UIViewRepresentable {
             return nil
         }
 
-        /// Modern (iOS 14.5+) overload of the navigation-action decision
-        /// point. WHEN THIS IS IMPLEMENTED, WebKit calls ONLY this version
-        /// and never the legacy 3-argument one.
-        ///
-        /// `navigationAction.shouldPerformDownload` is ONLY exposed through
-        /// this overload. WebKit sets it to `true` *before the request is
-        /// even sent*, whenever the link carries the HTML `download`
-        /// attribute (`<a href="…" download>`).
         @available(iOS 14.5, *)
         func webView(
             _ webView: WKWebView,
@@ -171,8 +151,6 @@ struct SafariWebView: UIViewRepresentable {
             }
         }
 
-        /// Legacy overload, kept for source completeness. Delegates to the
-        /// exact same routing logic so the two paths can never drift apart.
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
@@ -193,9 +171,6 @@ struct SafariWebView: UIViewRepresentable {
                 return
             }
 
-            // Custom scheme used by the blob download shim in SafariTab.
-            // The URL carries `?name=...&data=<base64>` and we materialise it
-            // as a real file under the app's Downloads directory.
             if scheme == "oldsafari-download" {
                 handleBlobDownload(url: url)
                 decisionHandler(.cancel)
@@ -208,9 +183,6 @@ struct SafariWebView: UIViewRepresentable {
                 return
             }
 
-            // Defensive, extension-based override: several .ipa/.apk/.exe
-            // hosts are known to serve binary files through misconfigured
-            // or generic CDN layers that omit or mislabel Content-Type.
             let neverRenderExtensions: Set<String> = [
                 "ipa", "apk", "exe", "msi", "dmg", "pkg", "deb", "appimage"
             ]
@@ -222,20 +194,12 @@ struct SafariWebView: UIViewRepresentable {
             decisionHandler(.allow)
         }
 
-        /// Schemes `WKWebView` can actually load and render. Anything else
-        /// (`itms-services:`, `mailto:`, `tel:`, `sms:`, custom app schemes,
-        /// ...) must be handed to `UIApplication.shared.open` instead of
-        /// being navigated.
         private static func isWebHandledScheme(_ scheme: String) -> Bool {
             ["http", "https", "about", "blob", "data", "file"].contains(scheme)
         }
 
         // MARK: Download detection
 
-        /// The response phase is where WebKit tells us the MIME type and
-        /// headers. Anything the browser cannot render inline (attachment,
-        /// unknown MIME, application/octet-stream) is redirected to the
-        /// download machinery, exactly like the current Safari does.
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -287,8 +251,6 @@ struct SafariWebView: UIViewRepresentable {
             decisionHandler(.allow)
         }
 
-        /// Filled in from `decidePolicyFor:navigationResponse:` so we can
-        /// carry the suggested filename into `didBecome`.
         private var pendingHint: (String, URL)?
 
         func webView(
@@ -405,8 +367,6 @@ struct SafariWebView: UIViewRepresentable {
             didFailProvisionalNavigation navigation: WKNavigation?,
             withError error: Error
         ) {
-            // NSURLErrorCancelled (-999) is expected for interrupted loads.
-            // WKWebView has no useful UI state to expose for it.
             webView.scrollView.refreshControl?.endRefreshing()
         }
 
@@ -443,9 +403,6 @@ struct SafariWebView: UIViewRepresentable {
                 buttons: buttons,
                 text: textField
             ) { [weak presenter] value, index in
-                // WKWebView's completion handler must be called before the
-                // presentation controller is torn down. Doing it here also
-                // guarantees it is invoked exactly once.
                 completion(value, index)
                 presenter?.dismiss(animated: true)
             }
@@ -585,10 +542,6 @@ struct SafariWebView: UIViewRepresentable {
             completionHandler(configuration)
         }
 
-        /// WKContextMenuElementInfo supplies the resolved image URL, but does
-        /// not itself save anything. Fetch it as binary data, create a UIImage,
-        /// then use the Photos add-only API. This fixes "Save Image" on sites
-        /// such as Google Images without depending on WebKit's temporary cache.
         private func saveImageToPhotos(_ url: URL) {
             let request = URLRequest(
                 url: url,
@@ -613,14 +566,6 @@ struct SafariWebView: UIViewRepresentable {
     }
 }
 
-/// Replica dell'alert di sistema iOS 6 (rif. foto "Data Isolation" /
-/// permessi localizzazione).
-///
-/// Sfondo della card: gradiente blu piatto con riflesso lucido concentrato
-/// SOLO nel primo ~20% dell'altezza — mantenuto dall'ultima revisione su
-/// richiesta esplicita. Struttura dei pulsanti, margini e raggio degli
-/// angoli sono alla versione precedente (gradiente pulsanti a 4 stop con
-/// salto netto a metà, margini 10pt/gap 8pt, cornerRadius 13).
 final class OldOSJavaScriptAlertController: UIViewController {
 
     enum ButtonKind {
