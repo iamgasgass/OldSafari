@@ -216,23 +216,18 @@ private struct DownloadRow: View {
         }
     }
 
-    /// MANIACALLY faithful port of `SafariAddressBar`'s loading treatment,
-    /// reused verbatim: same base fill (`theme.fieldFill`), same
-    /// `theme.progressGradient` with `.brightness(0.1)` sliding left to
-    /// right as the value advances, same `RoundedRectangle(cornerRadius: 6)`
-    /// clip, the identical `OldOSInnerShadow` (radius 1.8, offset (0, 1),
-    /// intensity 0.5), and the identical `theme.fieldStroke` outline at
-    /// `lineWidth: 0.65` — pixel-for-pixel the same field chrome the
-    /// address bar paints while a page is loading. The only addition is
-    /// the live percentage readout inside the bar, which the address bar
-    /// itself has no use for (a URL has no numeric "percent" to show) but
-    /// was explicitly requested here.
-    ///
-    /// Height is 22pt rather than the address field's 32pt: the download
-    /// row's fixed layout has no room for a full-height field without
-    /// inflating every row in the list, so the plate is scaled down while
-    /// every color, corner radius, stroke weight and shadow parameter stay
-    /// byte-for-byte identical to the address bar's own values.
+    /// Maniacally faithful port of `SafariAddressBar`'s loading treatment:
+    /// same `theme.fieldFill` base, same `theme.progressGradient` with
+    /// `.brightness(0.1)` sliding left to right, same
+    /// `RoundedRectangle(cornerRadius: 6)` clip, the identical
+    /// `OldOSInnerShadow` (radius 1.8, offset (0, 1), intensity 0.5), and
+    /// the identical `theme.fieldStroke` outline at `lineWidth: 0.65`.
+    /// Height is 22pt rather than the address field's 32pt because the
+    /// download row's fixed layout has no room for a full-height field —
+    /// every color, corner radius, stroke weight and shadow parameter
+    /// stays byte-for-byte identical to the address bar's own values. The
+    /// live percentage readout is the one addition, since a URL has no
+    /// numeric "percent" to show but a download explicitly does.
     private var progressStrip: some View {
         ZStack(alignment: .trailing) {
             GeometryReader { geometry in
@@ -255,9 +250,6 @@ private struct DownloadRow: View {
             )
             .oldOSStrokeRoundedRectangle(6, theme.fieldStroke, lineWidth: 0.65)
 
-            // Live percentage, updated in lockstep with the plate itself —
-            // "mostrare la percentuale progressiva del download all'interno
-            // della barra", exactly as requested.
             Text("\(Int((clampedPlateProgress * 100).rounded()))%")
                 .font(OldOSFont.bold(10))
                 .foregroundColor(theme.fieldTextIdle)
@@ -269,9 +261,8 @@ private struct DownloadRow: View {
         .padding(.trailing, 1)
         .padding(.top, 2)
         .onAppear {
-            // Catch up instantly if the row appears mid-download (e.g. the
-            // Downloads panel is opened after a download already started),
-            // exactly like the address bar's own `showsPlate` catch-up on
+            // Catch up instantly if the row appears mid-download, exactly
+            // like the address bar's own `showsPlate` catch-up on
             // `tab.$isLoading`.
             plateProgress = max(download.progress, 0.06)
         }
@@ -286,15 +277,15 @@ private struct DownloadRow: View {
     private var trailingButtons: some View {
         switch download.state {
         case .running:
-            OldOSDownloadIconButton(kind: .cancel, theme: theme, action: onCancel)
+            OldOSDownloadIconButton(kind: .cancel, action: onCancel)
         case .completed:
-            HStack(spacing: 7) {
-                OldOSDownloadIconButton(kind: .folder, theme: theme, action: onOpen)
-                OldOSDownloadIconButton(kind: .share, theme: theme, action: onShare)
-                OldOSDownloadIconButton(kind: .trash, theme: theme, action: onDelete)
+            HStack(spacing: 8) {
+                OldOSDownloadIconButton(kind: .folder, action: onOpen)
+                OldOSDownloadIconButton(kind: .share, action: onShare)
+                OldOSDownloadIconButton(kind: .trash, action: onDelete)
             }
         case .failed, .cancelled:
-            OldOSDownloadIconButton(kind: .trash, theme: theme, action: onDelete)
+            OldOSDownloadIconButton(kind: .trash, action: onDelete)
         }
     }
 
@@ -315,41 +306,56 @@ private struct DownloadRow: View {
     }
 }
 
-/// FIX (also applied earlier in this project's history): this button must
-/// receive `theme` explicitly. It previously referenced `theme.listRowText`
-/// without ever declaring a `theme` property on the type itself, which is a
-/// hard compile error ("instance member 'theme' ... cannot be used on
-/// instance of nested type") — a Swift nested type never implicitly
-/// inherits its parent's properties. Synthesizing a fresh theme via
-/// `OldOSSafariTheme.theme(isPrivate: false)` would compile but silently
-/// ignore Private Browsing mode, so the icons would keep the light chrome
-/// even while the whole rest of the sheet switched to the dark Private
-/// palette — a real, if subtle, visual bug. Passing `theme` through from
-/// `DownloadRow`, which already receives the correct one from
-/// `SafariDownloadsView`, is the only fully correct fix.
+/// MANIACAL FIX — "quello dimenticato": every other button in this app
+/// (`OldOSRectangleButton` — Done, Clear, Cancel, the action-sheet
+/// buttons…) is a glossy, beveled rounded-rect painted with
+/// `oldOSButtonGradient(_:)` and `oldOSInnerShadowBackground(...)`. The
+/// previous revision of these three download-row icons skipped that chrome
+/// entirely and drew a bare, backgroundless line-art glyph — which is why
+/// the "before" screenshot shows flat black/red outlines with no button
+/// plate behind them at all, instead of the solid blue/red glossy squares
+/// every other actionable control in the app already has. This reuses the
+/// EXACT same primitives, same corner radius family, same shadow
+/// parameters, same button-press feedback — folder and share use `.blue`
+/// (identical to the "Done" button and `primaryButton`), trash and cancel
+/// use `.red` (identical to every other destructive control in the app,
+/// e.g. `shareCancelInner`). The glyph itself is unchanged (still the
+/// hand-drawn Canvas path at the correct 24×24 design size), just now
+/// rendered in white on top of its own colored plate instead of floating
+/// on the bare row background.
 private struct OldOSDownloadIconButton: View {
     enum Kind { case folder, share, trash, cancel }
 
     let kind: Kind
-    let theme: OldOSSafariTheme
     let action: () -> Void
+
+    private var buttonType: OldOSButtonType {
+        switch kind {
+        case .trash, .cancel: return .red
+        case .folder, .share: return .blue
+        }
+    }
 
     var body: some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
-            OldOSDownloadGlyph(
-                kind: kind,
-                color: kind == .trash || kind == .cancel
-                    ? .oldOS(189, 20, 33)
-                    : theme.listRowText
-            )
-            .frame(width: 24, height: 24)
+            OldOSDownloadGlyph(kind: kind, color: .white)
+                .frame(width: 18, height: 18)
+                .shadow(color: Color.black.opacity(0.35), radius: 0, x: 0, y: -1)
         }
         .frame(width: 32, height: 32)
-        .contentShape(Rectangle())
+        .oldOSInnerShadowBackground(
+            RoundedRectangle(cornerRadius: 6),
+            oldOSButtonGradient(buttonType),
+            radius: 0.8,
+            offset: CGPoint(x: 0, y: 0.6),
+            intensity: 0.7
+        )
+        .shadow(color: Color.white.opacity(0.28), radius: 0, x: 0, y: 0.8)
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
     }
 }
 
