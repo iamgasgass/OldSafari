@@ -33,10 +33,10 @@ final class SafariDownload: NSObject, ObservableObject, Identifiable {
     /// container (`Documents/Downloads/...`). Persistent across launches.
     private(set) var destinationURL: URL?
 
-    init(sourceURL: URL, suggestedFilename: String) {
+    init(sourceURL: URL, suggestedFilename: String, startedAt: Date = Date()) {
         self.sourceURL = sourceURL
         self.suggestedFilename = suggestedFilename
-        self.startedAt = Date()
+        self.startedAt = startedAt
     }
 
     var progress: Double {
@@ -135,5 +135,30 @@ extension SafariDownload {
     /// Convenience for wiring the live WKDownload after `init`.
     func attach(_ download: WKDownload) {
         self.download = download
+    }
+
+    /// Rebuilds an already-completed entry from persisted state (see
+    /// `SafariDownloadManager.loadPersistedDownloads`), for a file that
+    /// finished downloading in a previous app session and is still present
+    /// on disk. Skips the running/WKDownload lifecycle entirely — there is
+    /// no live `WKDownload` to attach because the process that owned it is
+    /// gone, only the finished file and its metadata survive.
+    static func restored(
+        sourceURL: URL,
+        suggestedFilename: String,
+        startedAt: Date,
+        destinationURL: URL,
+        bytesReceived: Int64
+    ) -> SafariDownload {
+        let entry = SafariDownload(
+            sourceURL: sourceURL,
+            suggestedFilename: suggestedFilename,
+            startedAt: startedAt
+        )
+        entry.destinationURL = destinationURL
+        entry.bytesReceived = bytesReceived
+        entry.bytesExpected = bytesReceived
+        entry.state = .completed(destinationURL)
+        return entry
     }
 }
