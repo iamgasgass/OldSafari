@@ -13,17 +13,11 @@ struct SafariWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let webView = tab.webView
 
-        // FIX: delegates MUST be attached before `activateIfNeeded()` can
-        // ever call `webView.load()`. The previous order called
-        // `activateIfNeeded()` first, so the tab's very first navigation
-        // — whether restored from a saved session or opened fresh — could
-        // start before `navigationDelegate`/`uiDelegate` existed, silently
-        // skipping every download/scheme/MIME check below for that one
-        // request. Paired with the matching fix in `SafariTab.init`
-        // (which now always defers the initial load to
-        // `activateIfNeeded()` instead of loading synchronously inside
-        // the initializer), this guarantees a delegate is in place before
-        // any request this browser makes ever leaves the device.
+        // Delegates MUST be attached before `activateIfNeeded()` can ever
+        // call `webView.load()` — paired with the matching fix in
+        // `SafariTab.init` (which now always defers the initial load to
+        // `activateIfNeeded()`), this guarantees a delegate is in place
+        // before any request this browser makes ever leaves the device.
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         tab.activateIfNeeded()
@@ -134,6 +128,12 @@ struct SafariWebView: UIViewRepresentable {
             return nil
         }
 
+        /// `navigationAction.shouldPerformDownload` is WebKit's OWN signal
+        /// that the link carries the HTML `download` attribute
+        /// (`<a href="…" download>`) — an explicit, unambiguous statement
+        /// of intent from the page markup itself, so honouring it directly
+        /// with `.download` (no confirmation) matches what real Safari
+        /// does for that specific case.
         @available(iOS 14.5, *)
         func webView(
             _ webView: WKWebView,
@@ -159,6 +159,16 @@ struct SafariWebView: UIViewRepresentable {
             resolveActionPolicy(for: navigationAction, decisionHandler: decisionHandler)
         }
 
+        /// IMPORTANT: this stage must NEVER shortcut straight to
+        /// `.download` based on file extension alone — doing so would
+        /// bypass the confirmation alert entirely, which only lives in
+        /// `decidePolicyFor(navigationResponse:)` below. A previous
+        /// revision added exactly that shortcut here as "defence in
+        /// depth" against .ipa/.apk links, but for a plain https URL the
+        /// *response* stage always fires regardless of extension, so the
+        /// response-stage check alone is sufficient — and correct, since
+        /// it is the one that shows the alert. This stage only ever
+        /// intercepts non-web schemes and the custom blob-download bridge.
         private func resolveActionPolicy(
             for navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
@@ -183,14 +193,6 @@ struct SafariWebView: UIViewRepresentable {
                 return
             }
 
-            let neverRenderExtensions: Set<String> = [
-                "ipa", "apk", "exe", "msi", "dmg", "pkg", "deb", "appimage"
-            ]
-            if neverRenderExtensions.contains(url.pathExtension.lowercased()) {
-                decisionHandler(.download)
-                return
-            }
-
             decisionHandler(.allow)
         }
 
@@ -200,6 +202,11 @@ struct SafariWebView: UIViewRepresentable {
 
         // MARK: Download detection
 
+        /// The response phase is where WebKit tells us the MIME type and
+        /// headers. Anything the browser cannot render inline (attachment,
+        /// unknown MIME, application/octet-stream, or a well-known binary
+        /// extension) is confirmed with the user first, then redirected to
+        /// the download machinery — exactly like the current Safari does.
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -225,6 +232,14 @@ struct SafariWebView: UIViewRepresentable {
                 || mime.hasPrefix("audio/")
                 || mime.hasPrefix("video/") && isAttachment
 
+            // `response.mimeType` is WebKit's own sniffed interpretation
+            // and can be wrong behind CDNs/edge caches that omit or
+            // mangle Content-Type. A well-known "never render" extension
+            // in the URL itself is treated as authoritative regardless of
+            // whatever MIME value WebKit reports. This is the ONLY place
+            // the extension check lives — it feeds into the SAME
+            // confirmation alert as every other download trigger below,
+            // it never shortcuts past it.
             let neverRenderExtensions: Set<String> = [
                 "ipa", "apk", "exe", "msi", "dmg", "pkg", "deb", "appimage"
             ]
@@ -233,6 +248,10 @@ struct SafariWebView: UIViewRepresentable {
             if isAttachment || notRenderable || downloadishMIME || downloadishExtension {
                 let suggested = filenameHint(response: response, url: requestURL)
 
+                // Modern Safari always confirms with the user before a
+                // download actually starts. We show the classic iOS 6
+                // styled confirmation first, and only call `.download` if
+                // the user taps "Download".
                 presentOldOSAlert(
                     title: requestURL.host,
                     message: "Do you want to download \"\(suggested)\"?",
@@ -251,6 +270,8 @@ struct SafariWebView: UIViewRepresentable {
             decisionHandler(.allow)
         }
 
+        /// Filled in from `decidePolicyFor:navigationResponse:` so we can
+        /// carry the suggested filename into `didBecome`.
         private var pendingHint: (String, URL)?
 
         func webView(
