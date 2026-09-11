@@ -311,4 +311,4 @@ OldSafari is an independent, unofficial project. It is not affiliated with, endo
 
 Built for people who ❤️ and miss the character of classic iOS, without giving up the browser features expected on modern iPhones.
 
-- Built by [@iamgasgass] (https://github.com/iamgasgass)
+- Built by [iamgasgass] (https://github.com/iamgasgass)
