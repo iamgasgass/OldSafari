@@ -95,40 +95,20 @@ final class SafariTab: Identifiable, ObservableObject, Equatable {
         observeWebView()
 
         if let url {
-            // FIX for "Download IPA opens a permanently blank new tab":
-            // this used to branch on `deferLoad` and call
-            // `webView.load(...)` immediately when it was `false` — the
-            // default used by every tab opened via `window.open()` /
-            // target="_blank" (SafariRootView's `onOpenInNewTab` calls
-            // `store.addTab(url:)` with no `deferLoad` argument). That
-            // `.load()` call ran synchronously right here, inside this
-            // initializer — but `webView.navigationDelegate` and
-            // `.uiDelegate` are ONLY ever assigned in
-            // `SafariWebView.makeUIView`, which SwiftUI only invokes on a
-            // LATER render pass, after `tabs.append(tab)` schedules a UI
-            // update. There is a real, multi-runloop-turn gap between
-            // "tab object constructed" and "tab actually mounted with a
-            // delegate attached". Any navigation started in that gap
-            // proceeds with NO delegate at all: `decidePolicyFor(
-            // navigationAction:)`, `shouldPerformDownload`, the
-            // extension-based download detection, and the download
-            // confirmation alert never ran for it, because there was no
-            // delegate around to call them. WebKit's default behaviour
-            // with no navigation delegate is to just allow the load and
-            // try to render the response inline — for a binary .ipa
-            // response that produces exactly the empty/blank tab that was
-            // reported, and no fix inside the Coordinator itself could
-            // ever have helped, because the Coordinator was never in the
-            // loop for that specific request.
-            //
-            // The fix: ALWAYS defer, unconditionally. `activateIfNeeded()`
-            // is the only code path allowed to call `webView.load()` for
-            // an initial URL, and it is only ever invoked from
-            // `makeUIView` — which, after the matching fix there, sets
-            // both delegates BEFORE calling it. This guarantees every
-            // single first navigation, however the tab was created, has
-            // its delegate fully attached before any request leaves the
-            // device.
+            // Always defer, unconditionally: `activateIfNeeded()` is the
+            // only code path allowed to call `webView.load()` for an
+            // initial URL, and it is only ever invoked from
+            // `SafariWebView.makeUIView` — which sets both
+            // `navigationDelegate` and `uiDelegate` BEFORE calling it.
+            // Calling `.load()` synchronously here, inside the
+            // initializer, used to race ahead of those delegate
+            // assignments (which only happen on a LATER SwiftUI render
+            // pass, after `tabs.append(tab)` schedules a UI update), so
+            // the tab's very first navigation — every tab opened via
+            // `window.open()` / target="_blank", i.e. exactly the
+            // "Download IPA" flow — could proceed with no delegate at
+            // all, silently skipping every download/scheme/MIME check
+            // for that one request.
             pendingURL = url
             self.url = url
             self.isSecure = url.scheme?.lowercased() == "https"
