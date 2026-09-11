@@ -38,6 +38,27 @@ final class SafariDownloadManager: NSObject, ObservableObject {
         return folder
     }()
 
+    /// Where the list of *completed* downloads is persisted across app
+    /// launches. Deliberately kept in Application Support rather than
+    /// alongside the files themselves in `downloadsDirectory`, so this
+    /// bookkeeping file never appears in any user-facing file listing
+    /// (Files app document browsing, "Open In", etc.) — only the real
+    /// downloaded files live under `Documents/Downloads`.
+    private lazy var manifestURL: URL = {
+        let base = (try? FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )) ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return base.appendingPathComponent("OldSafariDownloads.json")
+    }()
+
+    private override init() {
+        super.init()
+        loadPersistedDownloads()
+    }
+
     // MARK: Public
 
     /// Called by SafariTab when the navigation policy says the response is a
@@ -71,15 +92,14 @@ final class SafariDownloadManager: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: url)
             }
             downloads.remove(at: index)
+            persistDownloads()
         }
     }
 
-    /// Removes every non-running entry from the list AND deletes its file
-    /// from the Downloads directory on disk. The previous implementation
-    /// only mutated the in-memory `downloads` array, so "Clear" appeared to
-    /// work in the UI while every finished file silently stayed on disk
-    /// forever, slowly filling up the app's document container.
     func clearFinished() {
+        // Delete the actual files from disk first — leaving them behind
+        // while only clearing the visible list would silently fill up the
+        // app's document container forever.
         let finished = downloads.filter { !$0.isRunning }
         for entry in finished {
             if let url = entry.destinationURL {
@@ -87,6 +107,7 @@ final class SafariDownloadManager: NSObject, ObservableObject {
             }
         }
         downloads.removeAll { !$0.isRunning }
+        persistDownloads()
     }
 
     /// External-write API for callers that already produced a `SafariDownload`
@@ -96,11 +117,102 @@ final class SafariDownloadManager: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.downloads.insert(entry, at: 0)
             self.didStartDownload.send(entry)
+            self.persistDownloads()
         }
     }
 
     var runningCount: Int {
         downloads.filter { $0.isRunning }.count
+    }
+
+    // MARK: Persistence
+
+    /// Lightweight, `Codable` snapshot of one completed download. Stores
+    /// only the filename (relative to `downloadsDirectory`), never an
+    /// absolute path — the app's container directory can change between
+    /// launches (reinstalls, iOS housekeeping, device migrations), so an
+    /// absolute `URL` baked into a manifest would silently point nowhere.
+    /// Reconstructing `downloadsDirectory.appendingPathComponent(filename)`
+    /// at load time is what makes restoration robust across those cases.
+    private struct PersistedRecord: Codable {
+        let id: UUID
+        let sourceURL: URL
+        let filename: String
+        let startedAt: Date
+        let bytesReceived: Int64
+    }
+
+    /// Rewrites the on-disk manifest from the current `downloads` array,
+    /// keeping ONLY entries that are both `.completed` and whose file still
+    /// verifiably exists on disk right now. Running, failed, and cancelled
+    /// downloads are never persisted: a `WKDownload` cannot resume across
+    /// process death, and failed/cancelled entries left no file behind, so
+    /// there is nothing meaningful to restore for them after a relaunch.
+    private func persistDownloads() {
+        let records: [PersistedRecord] = downloads.compactMap { entry in
+            guard
+                let destination = entry.completedURL,
+                FileManager.default.fileExists(atPath: destination.path)
+            else { return nil }
+            return PersistedRecord(
+                id: entry.id,
+                sourceURL: entry.sourceURL,
+                filename: destination.lastPathComponent,
+                startedAt: entry.startedAt,
+                bytesReceived: entry.bytesReceived
+            )
+        }
+
+        do {
+            let data = try JSONEncoder().encode(records)
+            try data.write(to: manifestURL, options: .atomic)
+        } catch {
+            // Best-effort: losing the manifest only means the next launch
+            // won't restore history — it never touches the files themselves.
+        }
+    }
+
+    /// Restores completed downloads from the previous session, but ONLY the
+    /// ones whose file is still verifiably present on disk right now — a
+    /// download deleted outside the app (Files app, external cleanup, iOS
+    /// storage reclamation) is silently dropped from the list rather than
+    /// shown as a dead entry, exactly mirroring how modern Safari's
+    /// Downloads list only ever shows files it can actually still open.
+    /// Any dropped entry also triggers an immediate manifest rewrite, so
+    /// the stale record does not keep being checked on every future launch.
+    private func loadPersistedDownloads() {
+        guard let data = try? Data(contentsOf: manifestURL),
+              let records = try? JSONDecoder().decode([PersistedRecord].self, from: data)
+        else { return }
+
+        var restored: [SafariDownload] = []
+        var didPruneAny = false
+
+        for record in records {
+            let path = downloadsDirectory.appendingPathComponent(record.filename)
+            guard FileManager.default.fileExists(atPath: path.path) else {
+                didPruneAny = true
+                continue
+            }
+            restored.append(
+                SafariDownload.restored(
+                    sourceURL: record.sourceURL,
+                    suggestedFilename: record.filename,
+                    startedAt: record.startedAt,
+                    destinationURL: path,
+                    bytesReceived: record.bytesReceived
+                )
+            )
+        }
+
+        // Newest first, matching how live downloads are inserted
+        // (`downloads.insert(entry, at: 0)`), so a relaunch never reshuffles
+        // the visible order the user already saw.
+        downloads = restored.sorted { $0.startedAt > $1.startedAt }
+
+        if didPruneAny {
+            persistDownloads()
+        }
     }
 
     // MARK: KVO
@@ -194,6 +306,11 @@ extension SafariDownloadManager: WKDownloadDelegate {
             } else {
                 entry.markFailed("Downloaded file could not be located")
             }
+            // `markCompleted`/`markFailed` schedule their own state mutation
+            // on the main queue; chaining this call through the same queue
+            // guarantees it runs afterward and therefore persists the
+            // finished (or explicitly not-persisted, if failed) state.
+            DispatchQueue.main.async { self.persistDownloads() }
         }
         stopObserving(download)
     }
